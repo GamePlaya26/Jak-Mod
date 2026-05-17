@@ -1,0 +1,411 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-darkjak-ability.gc
+;; name in dgo: target-darkjak-ability
+;; dgos: GAME
+
+;; ============================================================
+;; Cross-file references
+;; ============================================================
+(define-extern *darkjak-trans-mods* surface)
+(define-extern target-darkjak-end-mode (function symbol none :behavior target))
+
+;; ============================================================
+;; Ability mode globals
+;; ============================================================
+(define *djak-ability-mode* #f)
+(define *djak-shot-cooldown* 0)
+(define *djak-shot-cooldown-max* 120)
+(define *gdj-step-timer* 0)
+
+;; ============================================================
+;; Part 5270 -- bigpuff dark eco trail (purple)
+;; ============================================================
+(defpart 5270
+  :init-specs ((:texture (bigpuff level-default-sprite))
+    (:num 1.0)
+    (:x (meters -0.5) (meters 1.5))
+    (:scale-x (meters 4) (meters 3))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y (meters 4) (meters 3))
+    (:r 80.0 40.0)
+    (:g 0.0)
+    (:b 200.0 55.0)
+    (:a 16.0 32.0)
+    (:vel-y (meters -0.02) (meters -0.02))
+    (:scalevel-x (meters 0.006666667) (meters 0.01))
+    (:rotvel-z (degrees -0.3) (degrees 0.6))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -0.08 -0.16)
+    (:friction 0.95 0.03)
+    (:timer (seconds 2.167))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-12))
+    (:rotate-y (degrees 0) (degrees 3600))
+    )
+  )
+
+;; ============================================================
+;; group-djak-shot-trailer -- ID 503
+;; ============================================================
+(defpartgroup group-djak-shot-trailer
+  :id 503
+  :duration (seconds 0.017)
+  :bounds (static-bspherem 0 0 0 12)
+  :parts ((sp-item 5270 :fade-after (meters 200) :falloff-to (meters 200)))
+  )
+(define group-djak-shot-trailer (-> *part-group-id-table* 503))
+
+;; Part 5272 -- dark eco shockwave ring
+;; Matches part 626 -- sparticle-track-hadouken does the flattening, no conerot needed
+(defpart 5272
+  :init-specs ((:texture (water-radiate level-default-sprite))
+    (:num 8.0)
+    (:scale-x (meters 6) (meters 3))
+    (:rot-x 4)
+    (:scale-y :copy scale-x)
+    (:r 20.0 10.0)
+    (:g 0.0)
+    (:b 200.0 55.0)
+    (:a 180.0 64.0)
+    (:scalevel-x (meters 0.15) (meters 0.05))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -2.5)
+    (:timer (seconds 0.6))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    (:func sparticle-track-hadouken)
+    )
+  )
+
+;; ============================================================
+;; djak-shot projectile type
+;; home-handle -- target to home toward
+;; ============================================================
+(deftype djak-shot (projectile)
+  ((fire-pos    vector  :inline)
+   (fire-sound  sound-id)
+   (old-transv  vector  :inline)
+   (home-handle handle)
+   )
+  )
+
+(defmethod deactivate ((this djak-shot))
+  (sound-stop (-> this fire-sound))
+  (call-parent-method this)
+  (none)
+  )
+
+(defmethod setup-collision! ((this djak-shot))
+  (let ((s5-0 (new 'process 'collide-shape-moving this (collide-list-enum hit-by-player))))
+    (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
+    (set! (-> s5-0 reaction) cshape-reaction-projectile)
+    (set! (-> s5-0 no-reaction)
+          (the-as (function collide-shape-moving collide-query vector vector object) nothing)
+          )
+    (let ((v1-6 (new 'process 'collide-shape-prim-sphere s5-0 (the-as uint 0))))
+      (set! (-> v1-6 prim-core collide-as) (collide-spec projectile))
+      (set! (-> v1-6 prim-core collide-with)
+            (collide-spec backgnd crate civilian enemy obstacle vehicle-sphere hit-by-others-list pusher)
+            )
+      (set! (-> v1-6 prim-core action) (collide-action solid))
+      (set-vector! (-> v1-6 local-sphere) 0.0 0.0 0.0 2048.0)
+      (set! (-> s5-0 total-prims) (the-as uint 1))
+      (set! (-> s5-0 root-prim) v1-6)
+      )
+    (set! (-> s5-0 nav-radius) (* 0.75 (-> s5-0 root-prim local-sphere w)))
+    (let ((v1-9 (-> s5-0 root-prim)))
+      (set! (-> s5-0 backup-collide-as) (-> v1-9 prim-core collide-as))
+      (set! (-> s5-0 backup-collide-with) (-> v1-9 prim-core collide-with))
+      )
+    (set! (-> s5-0 max-iteration-count) (the-as uint 2))
+    (set! (-> s5-0 event-self) 'touched)
+    (set! (-> this root) s5-0)
+    )
+  (set! (-> this root pat-ignore-mask)
+        (new 'static 'pat-surface :noentity #x1 :nojak #x1 :probe #x1 :noproj #x1 :noendlessfall #x1 :board #x1)
+        )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-shot-move
+;; Soft homing -- each frame steer velocity toward home-handle target
+;; ============================================================
+(defun djak-shot-move ((arg0 djak-shot))
+  (set! (-> arg0 old-transv quad) (-> arg0 root transv quad))
+  ;; Soft homing -- curve toward locked target if valid
+  (let ((home-proc (handle->process (-> arg0 home-handle))))
+    (when (and home-proc (nonzero? (-> (the-as process-focusable home-proc) root)))
+      (let* ((target-pos (-> (the-as process-focusable home-proc) root trans))
+             (to-target  (new 'stack-no-clear 'vector))
+             (cur-speed  (vector-length (-> arg0 root transv)))
+             )
+        (vector-! to-target target-pos (-> arg0 root trans))
+        (+! (-> to-target y) 4096.0) ;; aim at center mass not feet
+        (vector-normalize! to-target cur-speed)
+        (vector-lerp! (-> arg0 root transv) (-> arg0 root transv) to-target 0.25)
+        (vector-normalize! (-> arg0 root transv) cur-speed)
+        )
+      )
+    )
+  (projectile-move-fill-line-sphere arg0)
+  (when (logtest? (-> arg0 root status) (collide-status touch-surface touch-actor))
+    (go (method-of-object arg0 impact))
+    )
+  (sound-play "djak-bolt-throw" :id (-> arg0 fire-sound) :position (-> arg0 root trans))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; projectile-method-24 -- direction setup
+;; ============================================================
+(defmethod projectile-method-24 ((this djak-shot))
+  (let ((cam-fwd (-> (camera-matrix) fvec)))
+    (vector-copy! (-> this root transv) cam-fwd)
+    (set! (-> this root transv y) 0.0)
+    (vector-normalize! (-> this root transv) 1.0)
+    (+! (-> this root transv y) 0.15)
+    (vector-normalize! (-> this root transv) 532480.0)
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; projectile-method-25 -- trail particles
+;; ============================================================
+(defmethod projectile-method-25 ((this djak-shot))
+  (vector-copy! (-> *launch-matrix* trans) (-> this root trans))
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5270)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0
+    )
+  (none)
+  )
+
+;; ============================================================
+;; projectile-method-26 -- impact visuals
+;; ============================================================
+(defmethod projectile-method-26 ((this djak-shot))
+  (sound-play "djak-strike-hit")
+  (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+  (vector-copy! (-> *launch-matrix* trans) (-> this root trans))
+  (cond
+    ((logtest? (-> group-metalhead-shot-hit flags) (sp-group-flag sp13))
+     (part-tracker-spawn part-tracker-subsampler :to *entity-pool* :group group-metalhead-shot-hit)
+     )
+    (else
+      (part-tracker-spawn part-tracker :to *entity-pool* :group group-metalhead-shot-hit)
+      )
+    )
+  ;; Ring -- darkjak smack wall explode scaled up (spawn twice for density)
+  (vector-copy! (-> *launch-matrix* trans) (-> this root trans))
+  (cond
+    ((logtest? (-> group-darkjak-smack-wall-explode flags) (sp-group-flag sp13))
+     (part-tracker-spawn part-tracker-subsampler :to *entity-pool* :group group-darkjak-smack-wall-explode)
+     (part-tracker-spawn part-tracker-subsampler :to *entity-pool* :group group-darkjak-smack-wall-explode)
+     )
+    (else
+      (part-tracker-spawn part-tracker :to *entity-pool* :group group-darkjak-smack-wall-explode)
+      (part-tracker-spawn part-tracker :to *entity-pool* :group group-darkjak-smack-wall-explode)
+      )
+    )
+  (none)
+  )
+
+;; ============================================================
+;; deal-damage!
+;; ============================================================
+(defmethod deal-damage! ((this djak-shot) (arg0 process) (arg1 event-message-block))
+  (let ((s4-0 (new 'stack 'attack-info)))
+    (let ((v1-1 s4-0))
+      (set! (-> v1-1 mode) 'dark-smack)
+      (set! (-> v1-1 id) (-> this attack-id))
+      (set! (-> v1-1 mask) (attack-mask mode id))
+      (set! (-> v1-1 penetrate-using) (penetrate dark-smack dark-skin dark-bomb))
+      )
+    (when (!= (-> this owner-handle) #f)
+      (set! (-> s4-0 attacker) (-> this owner-handle))
+      (logior! (-> s4-0 mask) (attack-mask attacker))
+      )
+    (set! (-> s4-0 damage) 6.0)
+    (set! (-> s4-0 vehicle-damage-factor) 1.0)
+    (set! (-> s4-0 vehicle-impulse-factor) 2.0)
+    (logior! (-> s4-0 mask) (attack-mask damage vehicle-damage-factor vehicle-impulse-factor))
+    (the-as symbol (send-event arg0 'attack arg1 s4-0))
+    )
+  )
+
+;; ============================================================
+;; init-proj-settings!
+;; ============================================================
+(defmethod init-proj-settings! ((this djak-shot))
+  (set! (-> this attack-mode) 'dark-smack)
+  (set! (-> this max-speed) 532480.0)
+  (set! (-> this move) djak-shot-move)
+  (set! (-> this timeout) (seconds 1.5))
+  (set! (-> this damage) 6.0)
+  (set! (-> this vehicle-damage-factor) 1.0)
+  (set! (-> this vehicle-impulse-factor) 2.0)
+  (set! (-> this max-hits) 1)
+  (set! (-> this fire-sound) (new-sound-id))
+  (vector-copy! (-> this fire-pos) (-> this root trans))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-ability-check-toggle
+;; ============================================================
+(defun djak-ability-check-toggle ()
+  (when (> *djak-shot-cooldown* 0)
+    (+! *djak-shot-cooldown* -1)
+    )
+  (when (and (cpad-hold? (-> *target* control cpad number) l1)
+             (cpad-pressed? (-> *target* control cpad number) r1)
+             (not *pause-lock*)
+             )
+    (set! *djak-ability-mode* (not *djak-ability-mode*))
+    (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 100 (seconds 0.1))
+    (format #t "[DJAK ABILITY] ~A~%" (if *djak-ability-mode* "ON" "OFF"))
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-shot-check-input
+;; ============================================================
+(defun djak-shot-check-input ()
+  (let ((square-pressed (and *djak-ability-mode*
+                             *target*
+                             (= *djak-shot-cooldown* 0)
+                             (cpad-pressed? (-> *target* control cpad number) square)
+                             (not *pause-lock*)
+                             )
+                        ))
+    (when square-pressed
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-abs 0) (pad-buttons square))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-rel 0) (pad-buttons square))
+      )
+    (when (and square-pressed
+               (logtest? (-> *target* control status) (collide-status on-surface))
+               (let ((sname (-> *target* state name)))
+                 (or (= sname 'target-stance)
+                     (= sname 'target-walk)
+                     )
+                 )
+               )
+      (set! *djak-shot-cooldown* *djak-shot-cooldown-max*)
+      (sound-play "djak-bolt-charg")
+      ;; Find nearest enemy to home toward
+      (let* ((home-handle (the-as handle #f))
+             (search-sphere (new 'stack-no-clear 'vector))
+             (actor-list (the-as (pointer collide-shape) (new 'stack-no-clear 'vector 8)))
+             )
+        (vector-copy! search-sphere (-> *target* control trans))
+        (set! (-> search-sphere w) 204800.0) ;; 50m search radius
+        (let ((hit-count (fill-actor-list-for-box *actor-hash* search-sphere actor-list 32)))
+          (let ((best-dist 204800.0))
+            (dotimes (i hit-count)
+              (let ((proc (as-type (-> (-> actor-list i) process) process-focusable)))
+                (when (and proc
+                           (logtest? (process-mask enemy civilian guard bot) (-> proc mask))
+                           (not (focus-test? (the-as process-focusable proc) dead))
+                           (nonzero? (-> (the-as process-focusable proc) root))
+                           )
+                  (let* ((tpos (-> (the-as process-focusable proc) root trans))
+                         (dx   (- (-> tpos x) (-> *target* control trans x)))
+                         (dz   (- (-> tpos z) (-> *target* control trans z)))
+                         (fx   (-> (camera-matrix) fvec x))
+                         (fz   (-> (camera-matrix) fvec z))
+                         (dot  (+ (* dx fx) (* dz fz)))
+                         )
+                    ;; Only home on targets in front of camera (dot > 0)
+                    (when (> dot 0.0)
+                      (let ((dist (vector-vector-distance (-> *target* control trans) tpos)))
+                        (when (< dist best-dist)
+                          (set! best-dist dist)
+                          (set! home-handle (process->handle proc))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        (let ((fire-pos (new 'stack-no-clear 'vector)))
+        (vector-copy! fire-pos (-> *target* control trans))
+        (+! (-> fire-pos y) 2048.0)
+        (vector-copy! (-> *launch-matrix* trans) fire-pos)
+        (let ((gp-0 (new 'stack-no-clear 'projectile-init-by-other-params)))
+          (set! (-> gp-0 ent) (-> *target* entity))
+          (set! (-> gp-0 charge) 1.0)
+          (set! (-> gp-0 options) (projectile-options))
+          (logclear! (-> gp-0 options) (projectile-options po14 po15 po16))
+          (vector-copy! (-> gp-0 pos) fire-pos)
+          (set! (-> gp-0 notify-handle) (the-as handle #f))
+          (set! (-> gp-0 owner-handle) (process->handle *target*))
+          (set! (-> gp-0 target-handle) (the-as handle #f))
+          (set! (-> gp-0 target-pos quad) (the-as uint128 0))
+          (set! (-> gp-0 ignore-handle) (process->handle *target*))
+          (let* ((v1-0 *game-info*)
+                 (a0-0 (+ (-> v1-0 attack-id) 1))
+                 )
+            (set! (-> v1-0 attack-id) a0-0)
+            (set! (-> gp-0 attack-id) a0-0)
+            )
+          (set! (-> gp-0 timeout) (seconds 1.5))
+          (vector-float*! (-> gp-0 vel) (-> (camera-matrix) fvec) 532480.0)
+          (let ((s3-0 (get-process *default-dead-pool* djak-shot #x8000 1)))
+            (when s3-0
+              (activate s3-0 *target* "djak-shot" (the-as pointer #x70004000))
+              (run-now-in-process s3-0 projectile-init-by-other gp-0)
+              ;; Set home-handle after init
+              (set! (-> (the-as djak-shot (-> s3-0 self)) home-handle) home-handle)
+              (-> s3-0 ppointer)
+              )
+            )
+          )
+        )
+      )
+      (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 180 (seconds 0.15))
+      )
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; gdj-footstep-update
+;; Called every frame from the GDJ block in target-darkjak-process.
+;; Plays "giant-step" sound and small camera wobble at walking cadence.
+;; ============================================================
+(defun gdj-footstep-update ()
+  (cond
+    ((and (logtest? (-> *target* control status) (collide-status on-surface))
+          (> (-> *target* control ctrl-xz-vel) (meters 2.0))
+          )
+     (+! *gdj-step-timer* 1)
+     (when (>= *gdj-step-timer* 18)
+       (set! *gdj-step-timer* 0)
+       (activate! *camera-smush-control* 128.0 4 10 1.0 0.99 (-> *display* camera-clock))
+       (sound-play-by-name (static-sound-name "giant-step") (new-sound-id) 1000 0 0 (sound-group) #t)
+       )
+     )
+    (else
+     ;; Reset timer when standing still so first step after movement fires promptly
+     (set! *gdj-step-timer* 0)
+     )
+    )
+  0
+  (none)
+  )

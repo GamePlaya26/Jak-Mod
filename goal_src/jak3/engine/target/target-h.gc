@@ -59,6 +59,7 @@
   (invinc)
   (invis)
   (no-anim)
+  (giant)
   )
 ;; ---darkjak-stage
 
@@ -208,6 +209,33 @@
 (define-extern *indax-hang-walk-mods* surface)
 (define-extern *indax-hang-dodge-mods* surface)
 (define-extern *indax-hang-attack-mods* surface)
+
+(define-extern eco-system-update (function surface none))
+(define-extern eco-mode-set! (function symbol object))
+(define-extern target-blue-eco-activate (state target))
+(define-extern blue-eco-particles-tick (function none))
+
+(define-extern eco-blue-glow (function vector none))
+
+(define-extern yeco-particles-tick (function none))
+(define-extern someone-fire-yellow (function process-drawable vector vector object))
+(define-extern gun-yellow-shot type)
+(define-extern gun-yellow-shot-3 type)
+
+(define-extern target-darkjak-giant (state target))
+(define-extern gdj-freight-train-check (function symbol :behavior target))
+
+(define-extern *djak-ability-mode* symbol)
+(define-extern *djak-shot-cooldown* int)
+(define-extern *djak-shot-cooldown-max* int)
+(define-extern djak-shot type)
+(define-extern group-djak-shot-anticipate sparticle-launch-group)
+(define-extern group-djak-shot-trailer sparticle-launch-group)
+(define-extern djak-ability-check-toggle (function none))
+(define-extern djak-shot-check-input (function none))
+
+(define-extern *eco-mode* symbol)
+
 
 ;; +++lightjak-stage
 (defenum lightjak-stage

@@ -1,0 +1,527 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-yellow-eco-projectile.gc
+;; Ported Jak 1 yellow eco orb particles for the yellow eco projectile system.
+
+;; ============================================================
+;; group-yellow-eco-fireball (id 1560)
+;; ============================================================
+
+(defpartgroup group-yellow-eco-fireball
+  :id 1560
+  :duration (seconds 1)
+  :bounds (static-bspherem 0 0 0 3)
+  :parts
+  ((sp-item 5200 :flags (sp3) :binding 5201)
+   (sp-item 5201 :flags (sp2 sp3) :binding 5202)
+   (sp-item 5202 :flags (sp2 sp3) :binding 5203)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5203 :flags (sp2) :binding 5204)
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))
+   (sp-item 5204 :fade-after (meters 100) :falloff-to (meters 100) :flags (sp2))))
+
+;; Root tracker - invisible anchor
+(defpart 5200
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 0.01))
+   (:scale-y :copy scale-x)
+   (:a 0.0)
+   (:timer (seconds 4))
+   (:flags (sp-cpuinfo-flag-3))))
+
+;; Starflash core glow
+(defpart 5201
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 2))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 128.0 128.0)
+   (:g 64.0 64.0)
+   (:a 64.0)
+   (:rotvel-z (degrees -0.4) 1 (degrees 0.8))
+   (:fade-a -2.0)
+   (:timer (seconds 0.1))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; Bigpuff core puff
+(defpart 5202
+  :init-specs
+  ((:texture (bigpuff level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 1.5) (meters 0.5))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 128.0 128.0)
+   (:g 64.0 64.0)
+   (:a 64.0)
+   (:scalevel-x (meters -0.02))
+   (:rotvel-z (degrees -0.3) 1 (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a -1.0)
+   (:timer (seconds 0.18))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; Trailing bigpuff
+(defpart 5203
+  :init-specs
+  ((:texture (bigpuff level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 1.5) (meters 0.5))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 128.0 128.0)
+   (:g 64.0 64.0)
+   (:a 64.0)
+   (:scalevel-x (meters -0.02))
+   (:rotvel-z (degrees -0.3) 1 (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a -1.0)
+   (:timer (seconds 0.18))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; Hotdot sparks
+(defpart 5204
+  :init-specs
+  ((:texture (hotdot level-default-sprite))
+   (:num 0.5 0.5)
+   (:y (meters -0.05))
+   (:scale-x (meters 0.3) (meters 0.1))
+   (:scale-y :copy scale-x)
+   (:r 100.0 28.0)
+   (:g 64.0 64.0)
+   (:b 0.0)
+   (:a 96.0)
+   (:vel-y (meters 0.005) (meters 0.011666667))
+   (:scalevel-x (meters -0.000909091))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-g -0.4)
+   (:fade-a -0.024242423)
+   (:accel-y (meters -0.000100000005) (meters -0.0003))
+   (:friction 0.93)
+   (:timer (seconds 0.1) (seconds 0.997))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+   (:next-time (seconds 0.3))
+   (:next-launcher 5205)
+   (:conerot-x (degrees 0) (degrees 180))
+   (:conerot-y (degrees 0) (degrees 360))
+   (:conerot-radius (meters 0.3))))
+
+;; Spark color stop
+(defpart 5205
+  :init-specs ((:fade-r 0.0)))
+
+;; ============================================================
+;; group-part-yellow-eco-fireball-launcher (id 1561)
+;; Muzzle flash
+;; ============================================================
+
+(defpartgroup group-part-yellow-eco-fireball-launcher
+  :id 1561
+  :duration (seconds 2)
+  :bounds (static-bspherem 0 0 0 6)
+  :parts
+  ((sp-item 5206 :flags (sp3))
+   (sp-item 5208 :flags (sp1) :period (seconds 2.1) :length (seconds 0.05))
+   (sp-item 5207 :flags (sp3))
+   (sp-item 5209 :flags (sp3) :binding 5210)
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))
+   (sp-item 5210 :flags (sp2 sp3))))
+
+;; Big starflash muzzle burst
+(defpart 5206
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 8))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 128.0)
+   (:a 64.0)
+   (:scalevel-x (meters -0.06666667))
+   (:rotvel-z (degrees -204.8) 1 (degrees 409.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a 0.0)
+   (:timer (seconds 0.2))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; Bigpuff smoke cloud
+(defpart 5207
+  :init-specs
+  ((:texture (bigpuff level-default-sprite))
+   (:num 5.0)
+   (:x (meters -0.6) (meters 1.2))
+   (:y (meters -0.6) (meters 1.2))
+   (:z (meters -0.6) (meters 1.2))
+   (:scale-x (meters 1.5) (meters 0.75))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 100.0 28.0)
+   (:g 64.0 64.0)
+   (:b 32.0)
+   (:a 32.0 32.0)
+   (:scalevel-x (meters 0.0044444446))
+   (:rotvel-z (degrees -0.3) (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-g -0.14222223)
+   (:fade-a -0.14222223)
+   (:accel-y (meters -0.000016666667))
+   (:timer (seconds 1.5))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; Hotdot spark spray
+(defpart 5208
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 12.0)
+   (:scale-x (meters 0.3) (meters 0.1))
+   (:scale-y :copy scale-x)
+   (:r 100.0 28.0)
+   (:g 64.0 64.0)
+   (:b 0.0)
+   (:a 128.0)
+   (:vel-y (meters 0) (meters 0.053333335))
+   (:scalevel-x (meters -0.0025000002))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-g -1.0666667)
+   (:fade-a -0.17777778)
+   (:accel-y (meters -0.001))
+   (:friction 0.99)
+   (:timer (seconds 0.2) (seconds 0.197))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+   (:conerot-x (degrees 0) (degrees 120))
+   (:conerot-y (degrees 90) (degrees 180))))
+
+;; Invisible streamer spawner
+(defpart 5209
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 16.0)
+   (:scale-x (meters 0.1))
+   (:scale-y :copy scale-x)
+   (:a 1.0)
+   (:vel-y (meters 0.02) (meters 0.013333334))
+   (:accel-y (meters -0.0005))
+   (:friction 0.99)
+   (:timer (seconds 1.1))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+   (:conerot-x (degrees 0) (degrees 100.00001))
+   (:conerot-y (degrees 90) (degrees 180))))
+
+;; Hotdot streamer child - remove distort flag
+(defpart 5210
+  :init-specs
+  ((:texture (hotdot level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 0.3) (meters 0.1))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 100.0 28.0)
+   (:g 64.0 64.0)
+   (:b 0.0)
+   (:a 64.0 64.0)
+   (:scalevel-x (meters -0.000909091))
+   (:rotvel-z (degrees -0.3) 1 (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-g -0.26666668)
+   (:fade-a -0.19393939)
+   (:timer (seconds 0.3) (seconds 0.797))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))))
+
+;; ============================================================
+;; group-part-yellow-eco-fireball-hit (id 1562)
+;; Impact explosion
+;; ============================================================
+
+(defpartgroup group-part-yellow-eco-fireball-hit
+  :id 1562
+  :duration (seconds 2)
+  :bounds (static-bspherem 0 0 0 6)
+  :parts
+  ((sp-item 5211 :period (seconds 2) :length (seconds 0.017))
+   (sp-item 5212 :fade-after (meters 80) :falloff-to (meters 80) :period (seconds 2) :length (seconds 0.135))
+   (sp-item 5215 :period (seconds 2) :length (seconds 0.067))
+   (sp-item 5214 :fade-after (meters 120) :falloff-to (meters 120) :period (seconds 2) :length (seconds 0.067))))
+
+;; Large starflash
+(defpart 5211
+  :init-specs
+  ((:texture (starflash level-default-sprite))
+   (:num 1.0)
+   (:scale-x (meters 16))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 192.0 32.0)
+   (:b 0.0)
+   (:a 96.0)
+   (:fade-a -1.7454545)
+   (:timer (seconds 0.18))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))))
+
+;; Hotdot spark burst
+(defpart 5212
+  :init-specs
+  ((:texture (hotdot level-default-sprite))
+   (:num 6.0)
+   (:scale-x (meters 0.2) (meters 0.4))
+   (:scale-y :copy scale-x)
+   (:r 192.0 64.0)
+   (:g 192.0 64.0)
+   (:b 0.0)
+   (:a 32.0 96.0)
+   (:vel-y (meters 0.026666667) (meters 0.10666667))
+   (:scalevel-x (meters -0.0016666667))
+   (:scalevel-y :copy scalevel-x)
+   (:accel-y (meters -0.00016666666) (meters -0.00016666666))
+   (:friction 0.9)
+   (:timer (seconds 1))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-14))
+   (:next-time (seconds 0.1) (seconds 0.097))
+   (:next-launcher 5213)
+   (:conerot-x (degrees 0) (degrees 180))
+   (:conerot-y (degrees 0) (degrees 360))
+   (:conerot-radius (meters 2) (meters 4))))
+
+;; Spark fade stop
+(defpart 5213
+  :init-specs ((:fade-r 0.0) (:fade-g 0.0) (:fade-b 0.0) (:fade-a -1.4222223)))
+
+;; Streak rays
+(defpart 5214
+  :init-specs
+  ((:texture (hotdot level-default-sprite))
+   (:num 3.0)
+   (:scale-x (meters 0.2))
+   (:rot-z (degrees 0) (degrees 180))
+   (:scale-y (meters 8))
+   (:r 255.0)
+   (:g 196.0)
+   (:b 0.0)
+   (:a 32.0 64.0)
+   (:scalevel-y (meters 0.42666668))
+   (:fade-a -1.6)
+   (:timer (seconds 0.2))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))))
+
+;; Bigpuff fireball chunks
+(defpart 5215
+  :init-specs
+  ((:texture (bigpuff level-default-sprite))
+   (:num 4.0)
+   (:scale-x (meters 2.5) (meters 1.5))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 192.0 64.0)
+   (:b 128.0)
+   (:a 64.0 64.0)
+   (:vel-y (meters 0.053333335) (meters 0.013333334))
+   (:scalevel-x (meters 0.013333334))
+   (:rotvel-z (degrees -0.3) (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a -1.6)
+   (:accel-y (meters 0.00016666666) (meters 0.00016666666))
+   (:friction 0.8)
+   (:timer (seconds 1.7))
+   (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-14))
+   (:next-time (seconds 0.14))
+   (:next-launcher 5216)
+   (:conerot-x (degrees 0) (degrees 180))
+   (:conerot-y (degrees 0) (degrees 360))))
+
+;; Bigpuff color drain
+(defpart 5216
+  :init-specs ((:fade-r -0.53333336) (:fade-g -0.53333336) (:fade-b -1.0666667) (:fade-a -0.53333336)))
+
+;; ============================================================
+;; yeco-projectile
+;; ============================================================
+
+(deftype yeco-projectile (projectile)
+  ()
+  )
+
+(defmethod setup-collision! ((this yeco-projectile))
+  "Set up collision shape"
+  (let ((s5-0 (new 'process 'collide-shape-moving this (collide-list-enum hit-by-player))))
+    (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
+    (set! (-> s5-0 reaction) cshape-reaction-projectile)
+    (set! (-> s5-0 no-reaction)
+          (the-as (function collide-shape-moving collide-query vector vector object) nothing))
+    (let ((v1-6 (new 'process 'collide-shape-prim-sphere s5-0 (the-as uint 0))))
+      (set! (-> v1-6 prim-core collide-as) (collide-spec projectile))
+      (set! (-> v1-6 prim-core collide-with)
+            (collide-spec backgnd crate civilian enemy obstacle vehicle-sphere hit-by-others-list pusher))
+      (set! (-> v1-6 prim-core action) (collide-action solid))
+      (set-vector! (-> v1-6 local-sphere) 0.0 0.0 0.0 2048.0)
+      (set! (-> s5-0 total-prims) (the-as uint 1))
+      (set! (-> s5-0 root-prim) v1-6))
+    (set! (-> s5-0 nav-radius) (* 0.75 (-> s5-0 root-prim local-sphere w)))
+    (let ((v1-9 (-> s5-0 root-prim)))
+      (set! (-> s5-0 backup-collide-as) (-> v1-9 prim-core collide-as))
+      (set! (-> s5-0 backup-collide-with) (-> v1-9 prim-core collide-with)))
+    (set! (-> s5-0 max-iteration-count) (the-as uint 2))
+    (set! (-> s5-0 event-self) 'touched)
+    (set! (-> this root) s5-0))
+  (set! (-> this root pat-ignore-mask)
+        (new 'static 'pat-surface :noentity #x1 :nojak #x1 :probe #x1 :noproj #x1 :noendlessfall #x1 :board #x1))
+  0
+  (none))
+
+
+
+(defun yeco-update-velocity ((arg0 projectile))
+  (let* ((speed (vector-length (-> arg0 root transv)))
+         (side (vector-x-quaternion! (new 'stack-no-clear 'vector) (-> arg0 root quat)))
+         (current-dir (vector-normalize-copy! (new 'stack-no-clear 'vector) (-> arg0 root transv) 1.0))
+         (blended (new 'stack-no-clear 'vector))
+         )
+    (+! (-> arg0 tween) 182.0)
+    (if (>= (-> arg0 tween) 65536.0)
+        (set! (-> arg0 tween) (- (-> arg0 tween) 65536.0)))
+    (let* ((sine-val (* 20480.0 (sin (-> arg0 tween))))
+           (target (new 'stack-no-clear 'vector))
+           )
+      (format #t "[YECO-VEL] tween=~f sine=~f side=~f ~f ~f~%"
+        (-> arg0 tween)
+        sine-val
+        (-> side x)
+        (-> side y)
+        (-> side z))
+      (vector+float*! target (-> arg0 base-target-pos) side sine-val)
+      (let ((to-target (vector-normalize-copy!
+                         (new 'stack-no-clear 'vector)
+                         (vector-! (new 'stack-no-clear 'vector) target (-> arg0 root trans))
+                         1.0)))
+        (format #t "[YECO-VEL] to-target=~f ~f ~f~%"
+          (-> to-target x)
+          (-> to-target y)
+          (-> to-target z))
+        (vector-lerp! blended current-dir to-target 0.1)
+        (vector-normalize! blended speed)
+        (vector-copy! (-> arg0 root transv) blended)
+        )
+      )
+    )
+  0
+  (none))
+
+(defmethod projectile-method-25 ((this yeco-projectile))
+  "Spawn orb particles at projectile position each frame"
+  (vector-copy! (-> *launch-matrix* trans) (-> this root trans))
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5201)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5202)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5203)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5204)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  0
+  (none))
+
+(defmethod init-proj-settings! ((this yeco-projectile))
+  "Set attack mode, speed and damage"
+  (set! (-> this attack-mode) 'eco-yellow)
+  (set! (-> this max-speed) 163840.0)
+  (set! (-> this damage) 2.0)
+  (set! (-> this vehicle-damage-factor) 1.0)
+  (set! (-> this vehicle-impulse-factor) 1.0)
+  (set! (-> this timeout) (seconds 3))
+  (set! (-> this update-velocity) yeco-update-velocity)
+  0
+  (none))
+
+
+(defmethod projectile-method-24 ((this yeco-projectile))
+  "Run after init - target-pos is now set so we can safely read it"
+  0
+  (none))
+
+(defstate impact (yeco-projectile)
+  :virtual #t
+  :code
+  (behavior ()
+    (vector-copy! (-> *launch-matrix* trans) (-> self root trans))
+    (part-tracker-spawn part-tracker
+      :to *entity-pool*
+      :group (-> *part-group-id-table* 1562))
+    (suspend)
+    (go-virtual die)))
+
+(defstate dissipate (yeco-projectile)
+  :virtual #t
+  :code
+  (behavior ()
+    (vector-copy! (-> *launch-matrix* trans) (-> self root trans))
+    (part-tracker-spawn part-tracker
+      :to *entity-pool*
+      :group (-> *part-group-id-table* 1562))
+    (suspend)
+    (go-virtual die)))

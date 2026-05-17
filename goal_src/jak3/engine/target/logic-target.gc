@@ -54,6 +54,7 @@
   (matrix-transpose! (-> self control w-R-c) (-> self control c-R-w))
   (vector-matrix*! (-> self control transv-ctrl) arg0 (-> self control w-R-c))
   (vector-copy! (-> self control last-gravity-normal) (-> self control gravity-normal))
+  (eco-system-update (-> self control current-surface)) ;; 
   (let ((v0-7 (-> self control gravity-normal)))
     (vector-copy! v0-7 (-> self control dynam gravity-normal))
     v0-7

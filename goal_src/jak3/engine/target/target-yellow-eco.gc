@@ -1,0 +1,130 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-yellow-eco.gc
+;; Yellow eco powers - bolt and shockwave
+
+(define *yeco-active* #f)
+(define *yeco-charges* 0)
+(define *yeco-max-charges* 5)
+(define *yeco-bolt-cooldown* 0)
+
+
+(defun yeco-consume ()
+  (set! *yeco-charges* (- *yeco-charges* 1))
+  (format #t "[YECO] ~A charges left~%" *yeco-charges*)
+  (when (= *yeco-charges* 0)
+    (set! *yeco-active* #f)
+    (format #t "[YECO] depleted~%")
+    )
+  0
+  (none)
+  )
+
+
+(defun yeco-activate-check ()
+  (when *eco-mode*
+    (let ((tri (cpad-pressed? (-> *target* control cpad number) triangle)))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-abs 0) (pad-buttons triangle))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-rel 0) (pad-buttons triangle))
+      (when (and tri (not *yeco-active*))
+        (set! *yeco-active* #t)
+        (set! *yeco-charges* *yeco-max-charges*)
+        (format #t "[YECO] activated~%")
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+  (defun yeco-particles-tick ()
+  "Spawn yellow eco particles while yellow eco is active"
+  (when (and *yeco-active*
+             (not (focus-test? *target* in-head))
+             (not (logtest? (-> *target* draw status) (draw-control-status no-draw no-draw-temp)))
+             )
+    (let ((joint (rand-vu-int-range 3 (+ (-> *target* node-list length) -1))))
+      (vector-copy!
+        (-> *launch-matrix* trans)
+        (vector<-cspace! (new 'stack-no-clear 'vector) (-> *target* node-list data joint))
+        )
+      (sp-launch-particles-var
+        *sp-particle-system-2d*
+        (-> *part-id-table* (if (rand-vu-percent? 0.5) 798 799))
+        *launch-matrix*
+        (the-as sparticle-launch-state #f)
+        (the-as sparticle-launch-control #f)
+        1.0
+        )
+      )
+    )
+  0
+  (none)
+  )
+ 
+(defun yeco-fire-bolt ()
+  "Fire a yellow eco orb in the direction Jak is facing"
+  (let* ((gp-0 (new 'stack-no-clear 'projectile-init-by-other-params))
+         (dir (vector-z-quaternion!
+                (new 'stack-no-clear 'vector)
+                (-> *target* control quat-for-control)))
+         (pos (let ((p (new 'stack-no-clear 'vector)))
+                (vector-copy! p (-> *target* control trans))
+                (set! (-> p y) (+ (-> p y) 2048.0))
+                p))
+         )
+    (set! (-> gp-0 ent) (-> *target* entity))
+    (set! (-> gp-0 charge) 1.0)
+    (set! (-> gp-0 options) (projectile-options))
+    (logclear! (-> gp-0 options) (projectile-options po14 po15 po16))
+    (vector-copy! (-> gp-0 pos) pos)
+    (set! (-> gp-0 notify-handle) (the-as handle #f))
+    (set! (-> gp-0 owner-handle) (the-as handle #f))
+    (set! (-> gp-0 target-handle) (the-as handle #f))
+    (set! (-> gp-0 target-pos quad) (the-as uint128 0))
+    (set! (-> gp-0 ignore-handle) (process->handle *target*))
+    (let* ((v1-0 *game-info*)
+           (a0-0 (+ (-> v1-0 attack-id) 1))
+           )
+      (set! (-> v1-0 attack-id) a0-0)
+      (set! (-> gp-0 attack-id) a0-0)
+      )
+    (set! (-> gp-0 timeout) (seconds 3))
+    (vector-normalize-copy! (-> gp-0 vel) dir 163840.0)
+    (process-spawn yeco-projectile
+      :init projectile-init-by-other
+      gp-0
+      :name "projectile"
+      :to *target*
+      :stack *kernel-dram-stack*)
+    )
+  0
+  (none))
+
+(defun yeco-bolt-check ()
+  (when *yeco-active*
+    (when (> *yeco-bolt-cooldown* 0)
+      (+! *yeco-bolt-cooldown* -1))
+    (when (and (cpad-pressed? (-> *target* control cpad number) square)
+               (= *yeco-bolt-cooldown* 0))
+      (set! *yeco-bolt-cooldown* 60)
+      (yeco-consume)
+      (yeco-fire-bolt)))
+  0
+  (none))
+
+(defun yeco-shockwave-check ()
+  (when *yeco-active*
+    (let ((ci (cpad-pressed? (-> *target* control cpad number) circle)))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-abs 0) (pad-buttons circle))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-rel 0) (pad-buttons circle))
+      (when ci
+        (yeco-consume)
+        (format #t "[YECO] shockwave~%")
+        )
+      )
+    )
+  0
+  (none)
+  )

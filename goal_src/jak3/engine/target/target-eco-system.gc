@@ -1,0 +1,197 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-eco-system.gc
+;; Eco Mode system - gives Jak access to 4 eco powers
+;; Toggle: L1+R1
+;; Blue     (X)        = speed burst
+;; Yellow   (Triangle) = bolt + shockwave
+;; Red      (Square)   = combat boost    (future)
+;; Green    (Circle)   = health regen    (future)
+
+;; --- eco mode state ---
+(define *eco-mode* #f)
+(define *eco-mode-l1r1-held* #f)
+
+;; --- blue eco state ---
+(define *blue-eco-active* #f)
+(define *blue-eco-timer* 0)
+(define *blue-eco-cooldown-timer* 0)
+
+;; forward declare yeco globals used before target-yellow-eco.gc loads
+(define *yeco-active* #f)
+(define *yeco-charges* 0)
+
+;; forward declare yeco functions from target-yellow-eco.gc
+(define-extern yeco-activate-check (function none))
+(define-extern yeco-bolt-check (function none))
+(define-extern yeco-shockwave-check (function none))
+(define-extern yeco-particles-tick (function none))
+
+
+
+
+;; --- blue eco tuning ---
+(define *blue-eco-speed-bonus* 21920.0)
+(define *blue-eco-duration* 280)
+(define *blue-eco-cooldown* 120)
+
+
+(defun eco-mode-set! ((state symbol))
+  "Enable or disable eco mode and update visual glow"
+  (set! *eco-mode* state)
+  (cond
+    (state
+      ;; Apply cyan tint directly - bypass color-effect system
+      (set-vector! (-> *target* draw color-mult) 0.5 1.0 1.0 1.0)
+      (set-vector! (-> *target* draw color-emissive) 0.0 0.2 0.3 0.0)
+      (format #t "[ECO MODE] ON~%")
+      )
+    (else
+      (set-vector! (-> *target* draw color-mult) 1.0 1.0 1.0 1.0)
+      (set! (-> *target* draw color-emissive quad) (the-as uint128 0))
+      (set! *blue-eco-active* #f)
+      (set! *blue-eco-timer* 0)
+      (set! *yeco-active* #f)
+      (set! *yeco-charges* 0)
+      (format #t "[ECO MODE] OFF~%")
+      )
+    )
+  0
+  (none)
+  )
+
+(defun eco-mode-check-toggle ()
+  "Check L1+R1 tap to toggle eco mode - blocked during transformations"
+  (when (and (cpad-hold? (-> *target* control cpad number) l1)
+             (cpad-pressed? (-> *target* control cpad number) r1)
+             (not (focus-test? *target* dark))
+             (not (focus-test? *target* light))
+             )
+    (eco-mode-set! (not *eco-mode*))
+    )
+  0
+  (none)
+  )
+
+(defun eco-mode-tick ()
+  "Update eco mode - auto cancel if jak transforms"
+  (when *eco-mode*
+    (when (or (focus-test? *target* dark)
+              (focus-test? *target* light)
+              )
+      (eco-mode-set! #f)
+      (format #t "[ECO MODE] cancelled - transformation active~%")
+      )
+    )
+  0
+  (none)
+  )
+
+(defun blue-eco-update-timers ()
+  "Count down blue eco timers each frame"
+  (when (> *blue-eco-timer* 0)
+    (+! *blue-eco-timer* -1)
+    )
+  (when (> *blue-eco-cooldown-timer* 0)
+    (+! *blue-eco-cooldown-timer* -1)
+    )
+  (when (= *blue-eco-timer* 0)
+    (set! *blue-eco-active* #f)
+    )
+  0
+  (none)
+  )
+
+(defstate target-blue-eco-activate (target)
+  :event target-standard-event-handler
+  :code (behavior ()
+    (+! (-> self control transv y) 12288.0)
+    (activate! *camera-smush-control* 819.2 5 20 1.0 0.9 (-> *display* camera-clock))
+    (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 180 (seconds 0.15))
+    (go target-stance)
+    )
+  :post target-post
+  )
+
+(defun blue-eco-check-input ()
+  "Check for X press in eco mode to trigger blue eco speed burst"
+  (when *eco-mode*
+    (let ((x-pressed (cpad-pressed? (-> *target* control cpad number) x)))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-abs 0) (pad-buttons x))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-rel 0) (pad-buttons x))
+      (when (and x-pressed
+                 (= *blue-eco-cooldown-timer* 0)
+                 (not *blue-eco-active*)
+                 )
+        (set! *blue-eco-active* #t)
+        (set! *blue-eco-timer* *blue-eco-duration*)
+        (set! *blue-eco-cooldown-timer* *blue-eco-cooldown*)
+        (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 180 (seconds 0.15))
+        (activate! *camera-smush-control* 819.2 5 20 1.0 0.9 (-> *display* camera-clock))
+        ;; only do the jump boost and state change if NOT mounted on a leaper
+        (when (not (focus-test? *target* flut))
+          (+! (-> *target* control transv y) 12288.0)
+          (send-event *target* 'change-state target-blue-eco-activate 0))
+        (format #t "[BLUE ECO] speed burst activated~%")
+        )
+      )
+    )
+  0
+  (none))
+
+(defun blue-eco-apply-speed ((surf surface))
+  "Apply blue eco speed bonus to current surface each frame"
+  (when (and *blue-eco-active*
+             (or (= (-> *target* control mod-surface name) 'run)
+                 (= (-> *target* control mod-surface name) 'jump)
+                 )
+             )
+    (+! (-> surf target-speed) *blue-eco-speed-bonus*)
+    (+! (-> surf transv-max) *blue-eco-speed-bonus*)
+    )
+  0
+  (none)
+  )
+
+(defun blue-eco-particles-tick ()
+  "Spawn blue eco particles only while blue eco dash is active"
+  (when *blue-eco-active*
+    (let ((joint (rand-vu-int-range 3 (+ (-> *target* node-list length) -1))))
+      (vector-copy!
+        (-> *launch-matrix* trans)
+        (vector<-cspace! (new 'stack-no-clear 'vector) (-> *target* node-list data joint))
+        )
+      (sp-launch-particles-var
+        *sp-particle-system-2d*
+        (-> *part-id-table* 784)
+        *launch-matrix*
+        (the-as sparticle-launch-state #f)
+        (the-as sparticle-launch-control #f)
+        1.0
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+(defun eco-system-update ((surf surface))
+  "Master update - called from build-conversions each frame"
+  (eco-mode-check-toggle)
+  (eco-mode-tick)
+  (blue-eco-update-timers)
+  (blue-eco-check-input)
+  (blue-eco-apply-speed surf)
+  (blue-eco-particles-tick)
+  (yeco-activate-check)
+  (yeco-bolt-check)
+  (yeco-shockwave-check)
+  (yeco-particles-tick)
+  (when *eco-mode*
+  (set-vector! (-> *target* draw color-mult) 0.5 1.0 1.0 1.0)
+  (set-vector! (-> *target* draw color-emissive) 0.0 0.2 0.3 0.0)
+  )
+  0
+  (none)
+  )

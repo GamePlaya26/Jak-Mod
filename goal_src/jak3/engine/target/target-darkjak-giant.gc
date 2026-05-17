@@ -1,0 +1,217 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-darkjak-giant.gc
+;; name in dgo: target-darkjak-giant
+;; dgos: GAME
+
+;; ============================================================
+;; Cross-file references from target-darkjak.gc (Jak 3)
+;; ============================================================
+(define-extern *darkjak-trans-mods* surface)
+(define-extern target-darkjak-get-off (state target))
+(define-extern target-darkjak-end-mode (function symbol none :behavior target))
+
+;; ============================================================
+;; target-darkjak-giant state
+;; Ported from Jak 2's target-darkjak.gc
+;; Handles the transformation into Giant Dark Jak.
+;; Triggered by pressing L2 again while already in Dark Jak.
+;; Uses Jak 3 assets only.
+;;
+;; Changes vs normal Dark Jak:
+;; - Jump height boosted to 35m (vs 20.5m dark jak default)
+;; - Run speed boosted to 13m/s (vs 10m/s dark jak default)
+;; - Contact danger set to 'dark-smack for freight train knockback
+;;   (handled in target-darkjak-process via giant flag check)
+;; - Impact radius boosted 3x in running attack (9830.4 vs 3276.8)
+;; - No eco drain on punches
+;; All values restored on exit.
+;; ============================================================
+(defstate target-darkjak-giant (target)
+  :event target-standard-event-handler
+  :exit (behavior ()
+    ;; Restore all GDJ stat boosts
+    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 20.5))
+    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 20.5))
+    (set! (-> *TARGET-bank* double-jump-height-min) (meters 1.0))
+    (set! (-> *TARGET-bank* double-jump-height-max) (meters 2.5))
+    (set! (-> *darkjak-trans-mods* transv-max) (meters 10.0))
+    (set! (-> *darkjak-trans-mods* target-speed) (meters 10.0))
+    (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))
+(set! (-> self control dynam gravity-length) (-> self control standard-dynamics gravity-length))
+    (set! (-> self control bomb-scale) 0.0)
+    (set! (-> self control root-prim local-sphere w) (meters 2.9))
+    (logclear! (-> self target-flags) (target-flags lleg-still rleg-still))
+    (set! (-> self darkjak-interp) 1.0)
+    (set! (-> self darkjak-giant-interp) (the-as float (-> self control unknown-word04)))
+    (when (= (the-as float (-> self control unknown-word04)) 1.0)
+      (logclear! (-> self darkjak stage) (darkjak-stage giant))
+      (set! (-> self darkjak want-stage) (-> self darkjak stage))
+      )
+    )
+  :code (behavior ()
+    ;; Apply GDJ stat boosts at the top of code since :enter may not fire
+    ;; when transitioning from target-darkjak-process behavior context
+;; Bake jump values in at giant activation time
+   ;; in :code and giant when block
+    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 24.0))
+    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 24.0))
+    (set! (-> *TARGET-bank* double-jump-height-min) (meters 8.0))
+    (set! (-> *TARGET-bank* double-jump-height-max) (meters 8.0))
+    (set! (-> *darkjak-trans-mods* transv-max) (meters 13.0))
+    (set! (-> *darkjak-trans-mods* target-speed) (meters 13.0))
+    (send-event (handle->process (-> self notify)) 'notify 'attack 18)
+    (set! (-> self darkjak want-stage) (-> self darkjak stage))
+    (logior! (-> self target-flags) (target-flags tf4))
+    (set! (-> self neck flex-blend) 0.0)
+    (set! (-> self control mod-surface) *darkjak-trans-mods*)
+    (logior! (-> self darkjak stage) (darkjak-stage giant))
+        (when (logtest? (the-as game-feature (logand (game-feature darkjak-bomb0) (-> *setting-control* user-current features)))
+                    (-> self game features))
+      (logior! (-> self darkjak stage) (darkjak-stage bomb0))
+      )
+    (when (logtest? (the-as game-feature (logand (game-feature darkjak-bomb1) (-> *setting-control* user-current features)))
+                    (-> self game features))
+      (logior! (-> self darkjak stage) (darkjak-stage bomb1))
+      )
+    (when (logtest? (the-as game-feature (logand (game-feature darkjak-smack) (-> *setting-control* user-current features)))
+                    (-> self game features))
+      (logior! (-> self darkjak stage) (darkjak-stage smack))
+      )
+    (set! (-> self darkjak want-stage) (-> self darkjak stage))
+    (sound-play "djak-transform")
+    (set! (-> self darkjak want-stage) (-> self darkjak stage))
+    (sound-play "djak-transform")
+    (let ((gp-1 (new 'stack-no-clear 'collide-query)))
+      (let ((s5-1 (new 'stack-no-clear 'inline-array 'sphere 1)))
+        (dotimes (s4-0 1)
+          ((method-of-type sphere new) (the-as symbol (-> s5-1 s4-0)) sphere)
+          )
+        (set! (-> s5-1 0 quad) (-> self control trans quad))
+        (+! (-> s5-1 0 y) 12697.6)
+        (set! (-> s5-1 0 r) 11878.4)
+        (let ((v1-29 gp-1))
+          (set! (-> v1-29 best-dist) (the-as float s5-1))
+          (set! (-> v1-29 num-spheres) (the-as uint 1))
+          (set! (-> v1-29 collide-with)
+                (logclear
+                  (-> self control root-prim prim-core collide-with)
+                  (collide-spec civilian enemy vehicle-sphere projectile)
+                  )
+                )
+          (set! (-> v1-29 ignore-process0) #f)
+          (set! (-> v1-29 ignore-process1) #f)
+          (set! (-> v1-29 ignore-pat)
+                (new 'static 'pat-surface :noentity #x1 :nojak #x1 :probe #x1 :noendlessfall #x1)
+                )
+          (set! (-> v1-29 best-my-prim) (the-as collide-shape-prim #t))
+          (set! (-> v1-29 action-mask) (collide-action solid))
+          )
+        )
+      (let ((gp-2 (not (fill-and-probe-using-spheres *collide-cache* gp-1))))
+        (set! (-> self control unknown-word04)
+              (the-as uint (if gp-2
+                               2.0
+                               1.0
+                               )
+                      )
+              )
+        (when gp-2
+          (set-setting! 'string-min-length 'rel 1.8 0)
+          (set-setting! 'string-max-length 'rel 1.5 0)
+          (set-setting! 'string-spline-max-move 'abs (meters 2) 0)
+          (set-setting! 'string-spline-accel 'abs (meters 0.045) 0)
+          (set-setting! 'string-spline-max-move-player 'abs (meters 1.5) 0)
+          (set-setting! 'string-spline-accel-player 'abs (meters 0.035) 0)
+          )
+        (ja-channel-push! 1 (seconds 0.1))
+        (ja-no-eval :group! jakb-darkjak-get-on-fast-ja :num! (seek! (ja-aframe 17.0 0)) :frame-num 0.0)
+        (until (ja-done? 0)
+          (cond
+            (gp-2
+              (set! (-> self darkjak-giant-interp) (lerp-scale 1.0 2.0 (ja-aframe-num 0) 5.0 15.0))
+              )
+            ((>= (ja-aframe-num 0) 10.0)
+             (set! (-> self darkjak-giant-interp) (lerp-scale 2.0 1.0 (ja-aframe-num 0) 5.0 15.0))
+             )
+            (else
+              (set! (-> self darkjak-giant-interp) (lerp-scale 1.0 2.0 (ja-aframe-num 0) 5.0 15.0))
+              )
+            )
+          (suspend)
+          (ja :num! (seek! (ja-aframe 17.0 0)))
+          )
+        )
+      )
+    (go target-stance)
+    )
+  :post (-> target-grab post)
+  )
+  ;; ============================================================
+;; gdj-freight-train-check
+;; Called every frame from target-darkjak-process while giant
+;; and moving. Scans for nearby actors and sends shove/attack
+;; events directly, bypassing collision overlap requirement.
+;; Only fires when moving above walk speed on the ground.
+;; ============================================================
+(defbehavior gdj-freight-train-check target ()
+  (when (and (> (-> self control ctrl-xz-vel) (meters 3.0))
+             (logtest? (-> self control status) (collide-status on-surface))
+             )
+    (let ((s5-0 (-> self focus-search))
+          (s4-0 (new 'stack-no-clear 'vector))
+          )
+      ;; Build a sphere around Jak's position for the scan
+      (set! (-> s4-0 quad) (-> self control trans quad))
+      (set! (-> s4-0 w) (meters 5.8))
+      ;; Fill actor list for nearby actors
+      (let ((s3-0 (fill-actor-list-for-box
+                    *actor-hash*
+                    s4-0
+                    (-> s5-0 data)
+                    (-> s5-0 allocated-length)
+                    )
+                  )
+            )
+        (set! (-> s5-0 length) s3-0)
+        ;; Iterate over nearby actors and send attack/shove
+        (countdown (s2-0 s3-0)
+          (let ((v1-10 (as-type (-> s5-0 s2-0 process) process-focusable)))
+            (when (and v1-10
+                       (logtest? (process-mask enemy guard crate) (-> v1-10 mask))
+                       )
+              (let* ((a0-8 (-> self game))
+                     (a1-5 (+ (-> a0-8 attack-id) 1))
+                     )
+                (set! (-> a0-8 attack-id) a1-5)
+                )
+              ;; Calculate shove direction from Jak toward enemy
+              (let ((shove-dir (new 'stack-no-clear 'vector)))
+                (vector-! shove-dir (get-trans v1-10 0) (-> self control trans))
+                (set! (-> shove-dir y) 0.0)
+                (vector-normalize! shove-dir 1.0)
+                (send-event
+                  v1-10
+                  'attack
+                  #f
+                  (static-attack-info :mask (vehicle-impulse-factor)
+                                      ((id (-> self game attack-id))
+                                       (damage 2.0)
+                                       (vehicle-damage-factor 2.0)
+                                       (vehicle-impulse-factor 2.0)
+                                       (shove-back (meters 12.0))
+                                       (shove-up (meters 4.0))
+                                       (mode 'dark-smack)
+                                       (penetrate-using (penetrate touch dark-skin dark-bomb))
+                                       )
+                                      )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
