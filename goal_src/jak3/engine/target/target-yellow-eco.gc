@@ -38,7 +38,7 @@
   (none)
   )
 
-  (defun yeco-particles-tick ()
+ (defun yeco-particles-tick ()
   "Spawn yellow eco particles while yellow eco is active"
   (when (and *yeco-active*
              (not (focus-test? *target* in-head))
@@ -52,6 +52,15 @@
       (sp-launch-particles-var
         *sp-particle-system-2d*
         (-> *part-id-table* (if (rand-vu-percent? 0.5) 798 799))
+        *launch-matrix*
+        (the-as sparticle-launch-state #f)
+        (the-as sparticle-launch-control #f)
+        1.0
+        )
+      ;; tiny fireballs
+      (sp-launch-particles-var
+        *sp-particle-system-2d*
+        (-> *part-id-table* 5225)
         *launch-matrix*
         (the-as sparticle-launch-state #f)
         (the-as sparticle-launch-control #f)

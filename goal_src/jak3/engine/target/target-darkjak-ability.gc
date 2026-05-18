@@ -398,7 +398,8 @@
      (when (>= *gdj-step-timer* 18)
        (set! *gdj-step-timer* 0)
        (activate! *camera-smush-control* 128.0 4 10 1.0 0.99 (-> *display* camera-clock))
-       (sound-play-by-name (static-sound-name "giant-step") (new-sound-id) 1000 0 0 (sound-group) #t)
+       (sound-play-by-name (static-sound-name "giant-step") (new-sound-id) 1024 0 0 (sound-group) #t)
+       (sound-play-by-name (static-sound-name "djak-bomb-land") (new-sound-id) 350 0 0 (sound-group) #t)
        )
      )
     (else

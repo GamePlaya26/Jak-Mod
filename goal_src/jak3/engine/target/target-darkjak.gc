@@ -801,6 +801,17 @@
         (set! (-> *double-jump-mods* target-speed) (meters 13.0))
        (logior! (-> self control penetrate-using) (penetrate touch dark-skin dark-bomb))
        (gdj-freight-train-check)
+
+       ;; og:preserve-this GDJ footstep sound and camera wobble
+       (gdj-footstep-update)
+       ;; og:preserve-this GDJ weight -- slow entity clock slightly while moving on ground
+       (if (and (logtest? (-> self control status) (collide-status on-surface))
+                (> (-> self control ctrl-xz-vel) (meters 2.0))
+                )
+           (update-rates! (-> *display* entity-clock) 0.85)
+           (update-rates! (-> *display* entity-clock) 1.0)
+           )
+
        
        (logior! (-> self control penetrate-using) (penetrate touch dark-skin dark-bomb))
        ;; Freight train knockback - trigger attack while moving on ground
@@ -811,6 +822,8 @@
          (target-danger-set! 'dark-smack #f)
          )
        )
+
+       (darkjak-aura-tick) 
      (let ((a1-0 (if (logtest? (-> self darkjak stage) (darkjak-stage giant))
                      'dark-smack
                      'eco-red
@@ -871,6 +884,7 @@
       ;; mod:preserve-this clear ability mode and tint on dark jak exit
       (set! *djak-ability-mode* #f)
       (set-vector! (-> self draw color-emissive) 0.0 0.0 0.0 0.0)
+       (update-rates! (-> *display* entity-clock) 1.0)
 
         
       )

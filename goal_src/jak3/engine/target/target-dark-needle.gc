@@ -1,0 +1,48 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-dark-needle.gc
+;; STUB VERSION -- bisecting boot crash
+
+(define-extern *djak-ability-mode* symbol)
+(define-extern target-darkjak-smack-charge (state target))
+(declare-type spatial-hash basic)
+(define-extern fill-actor-list-for-box (function spatial-hash vector (pointer collide-shape) int int))
+(declare-type gun-blue-shot projectile)
+(define-extern do-fire-backcheck (function vector vector symbol))
+(define-extern pc-check-focus-fix (function process-focusable symbol))
+(define-extern projectile-init-by-other (function projectile-init-by-other-params object :behavior projectile))
+
+(define-extern dark-needle-circle-check (function none))
+(define-extern dark-needle-fire-cluster (function float float none))
+(define-extern dark-needle-shot type)
+
+(define-extern *dark-needle-charging* symbol)
+(define-extern *dark-needle-charge-level* int)
+(define-extern pc-check-focus-fix (function process-focusable symbol))
+
+
+(define *dark-needle-charging*         #f)
+(define *dark-needle-charge-start*     (the-as time-frame 0))
+(define *dark-needle-charge-level*     0)
+(define *dark-needle-aura-pulse-timer* 0)
+(define *dark-needle-shot-trail*       (the-as light-trail-composition #f))
+
+(deftype dark-needle-shot (projectile)
+  ((hit-actor?              symbol)
+   (start-pos               vector  :inline)
+   (track-mode              uint64)
+   (random-travel-distance  float)
+   (size-scalar             float)
+   )
+  )
+
+(defun dark-needle-fire-cluster ((arg0 float) (arg1 float))
+  0
+  (none)
+  )
+
+(defun dark-needle-circle-check ()
+  0
+  (none)
+  )

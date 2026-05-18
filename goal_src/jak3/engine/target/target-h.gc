@@ -233,9 +233,11 @@
 (define-extern group-djak-shot-trailer sparticle-launch-group)
 (define-extern djak-ability-check-toggle (function none))
 (define-extern djak-shot-check-input (function none))
+(define-extern darkjak-aura-tick (function none))
 
 (define-extern *eco-mode* symbol)
 
+(define-extern gdj-footstep-update (function none))
 
 ;; +++lightjak-stage
 (defenum lightjak-stage

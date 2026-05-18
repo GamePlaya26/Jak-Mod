@@ -32,8 +32,8 @@
 
 
 ;; --- blue eco tuning ---
-(define *blue-eco-speed-bonus* 21920.0)
-(define *blue-eco-duration* 280)
+(define *blue-eco-speed-bonus* 25920.0)
+(define *blue-eco-duration* 500)
 (define *blue-eco-cooldown* 120)
 
 
@@ -155,7 +155,7 @@
   )
 
 (defun blue-eco-particles-tick ()
-  "Spawn blue eco particles only while blue eco dash is active"
+  "Spawn blue eco particles while blue eco dash is active"
   (when *blue-eco-active*
     (let ((joint (rand-vu-int-range 3 (+ (-> *target* node-list length) -1))))
       (vector-copy!
@@ -170,12 +170,23 @@
         (the-as sparticle-launch-control #f)
         1.0
         )
+      ;; tiny lightning strikes
+      (when (rand-vu-percent? 0.4)
+        (sp-launch-particles-var
+          *sp-particle-system-2d*
+          (-> *part-id-table* 5223)
+          *launch-matrix*
+          (the-as sparticle-launch-state #f)
+          (the-as sparticle-launch-control #f)
+          1.0
+          )
+        )
       )
     )
   0
   (none)
   )
-
+  
 (defun eco-system-update ((surf surface))
   "Master update - called from build-conversions each frame"
   (eco-mode-check-toggle)
