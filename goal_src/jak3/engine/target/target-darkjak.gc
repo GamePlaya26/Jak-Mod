@@ -8,6 +8,8 @@
 (define-extern *darkjak-ball-lightning* lightning-appearance)
 (define-extern target-darkjak-giant (state target))
 
+
+
 ;; DECOMP BEGINS
 
 (deftype darkjak-ball (projectile)

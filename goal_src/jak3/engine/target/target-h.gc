@@ -239,6 +239,15 @@
 
 (define-extern gdj-footstep-update (function none))
 
+
+(define-extern dark-needle-circle-check (function none))
+(define-extern dark-needle-do-spawn (function int none))
+(define-extern *dark-needle-charging*      symbol)
+(define-extern *dark-needle-charge-frames* int)
+(define-extern *dark-needle-charge-level*  int)
+(define-extern *dark-needle-fire-pending*  symbol)
+(define-extern *dark-needle-fire-level*    int)
+
 ;; +++lightjak-stage
 (defenum lightjak-stage
   :bitfield #t

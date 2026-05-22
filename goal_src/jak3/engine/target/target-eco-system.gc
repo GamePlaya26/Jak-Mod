@@ -28,6 +28,16 @@
 (define-extern yeco-shockwave-check (function none))
 (define-extern yeco-particles-tick (function none))
 
+;; --- red eco state ---
+(define *reco-active* #f)
+(define *reco-timer* 0)
+(define *reco-cooldown-timer* 0)
+(define *reco-duration* 300)
+(define *reco-cooldown* 120)
+
+;; forward declare from target-red-eco-test.gc
+(define-extern reco-particles-tick (function none))
+
 
 
 
@@ -54,6 +64,8 @@
       (set! *blue-eco-timer* 0)
       (set! *yeco-active* #f)
       (set! *yeco-charges* 0)
+      (set! *reco-active* #f)
+      (set! *reco-timer* 0)
       (format #t "[ECO MODE] OFF~%")
       )
     )
@@ -186,6 +198,42 @@
   0
   (none)
   )
+
+  (defun reco-check-input ()
+  "Check for Circle press in eco mode to trigger red eco combat boost"
+  (when *eco-mode*
+    (let ((circle-pressed (cpad-pressed? (-> *target* control cpad number) circle)))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-abs 0) (pad-buttons circle))
+      (logclear! (-> *cpad-list* cpads (-> *target* control cpad number) button0-rel 0) (pad-buttons circle))
+      (when (and circle-pressed
+                 (= *reco-cooldown-timer* 0)
+                 (not *reco-active*)
+                 )
+        (set! *reco-active* #t)
+        (set! *reco-timer* *reco-duration*)
+        (set! *reco-cooldown-timer* *reco-cooldown*)
+        (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 180 (seconds 0.15))
+        (format #t "[RED ECO] activated~%")
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+(defun reco-update-timers ()
+  (when (> *reco-timer* 0)
+    (+! *reco-timer* -1)
+    )
+  (when (> *reco-cooldown-timer* 0)
+    (+! *reco-cooldown-timer* -1)
+    )
+  (when (= *reco-timer* 0)
+    (set! *reco-active* #f)
+    )
+  0
+  (none)
+  )
   
 (defun eco-system-update ((surf surface))
   "Master update - called from build-conversions each frame"
@@ -199,6 +247,9 @@
   (yeco-bolt-check)
   (yeco-shockwave-check)
   (yeco-particles-tick)
+  (reco-update-timers)
+  (reco-check-input)
+  (reco-particles-tick)
   (when *eco-mode*
   (set-vector! (-> *target* draw color-mult) 0.5 1.0 1.0 1.0)
   (set-vector! (-> *target* draw color-emissive) 0.0 0.2 0.3 0.0)
