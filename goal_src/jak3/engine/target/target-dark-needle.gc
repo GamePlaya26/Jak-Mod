@@ -1,21 +1,31 @@
 ;;-*-Lisp-*-
 (in-package goal)
+
 ;; name: target-dark-needle.gc
 ;; name in dgo: target-dark-needle
 ;; dgos: GAME
+;;
+;; Dark needle projectile ability for Dark Jak.
+;; Light trail ported from gun-blue-shot-3, recolored dark eco.
+;; Uses light-trail-tracker-projectile as base (same as blue shot).
+;; IMPORTANT: restart REPL before compiling if type errors occur.
 
 (define-extern *djak-ability-mode* symbol)
 (define-extern projectile-init-by-other (function projectile-init-by-other-params object :behavior projectile))
 
-
-
+;; ============================================================
+;; Charge state globals
+;; ============================================================
 (define *dark-needle-charging*         #f)
-(define *dark-needle-charge-level*     0)
 (define *dark-needle-charge-frames*    0)
+(define *dark-needle-charge-level*     0)
 (define *dark-needle-aura-pulse-timer* 0)
 (define *dark-needle-fire-pending*     #f)
 (define *dark-needle-fire-level*       0)
 
+;; ============================================================
+;; defpart 5273 -- dark needle fallback particle
+;; ============================================================
 (defpart 5273
   :init-specs ((:texture (bigpuff level-default-sprite))
     (:num 1.0)
@@ -39,6 +49,9 @@
     )
   )
 
+;; ============================================================
+;; defpart 5274 -- dark shockwave charging aura
+;; ============================================================
 (defpart 5274
   :init-specs ((:texture (water-radiate level-default-sprite))
     (:num 6.0)
@@ -57,7 +70,71 @@
     )
   )
 
-  (declare-type dark-needle-shot projectile)
+;; ============================================================
+;; Custom dark-eco purple color curve
+(define *dark-needle-color-curve* (new 'loading-level 'curve-color-piecewise))
+(allocate! *dark-needle-color-curve* 3 'loading-level #f)
+;; tip: bright purple-white core
+(set! (-> *dark-needle-color-curve* pts data 0 first)     0.0)
+(set! (-> *dark-needle-color-curve* pts data 0 second x)  1.0)
+(set! (-> *dark-needle-color-curve* pts data 0 second y)  0.6)
+(set! (-> *dark-needle-color-curve* pts data 0 second z)  1.0)
+(set! (-> *dark-needle-color-curve* pts data 0 second w)  1.0)
+;; mid: deep purple
+(set! (-> *dark-needle-color-curve* pts data 1 first)     0.5)
+(set! (-> *dark-needle-color-curve* pts data 1 second x)  0.5)
+(set! (-> *dark-needle-color-curve* pts data 1 second y)  0.0)
+(set! (-> *dark-needle-color-curve* pts data 1 second z)  0.8)
+(set! (-> *dark-needle-color-curve* pts data 1 second w)  1.0)
+;; tail: near-black dark eco purple
+(set! (-> *dark-needle-color-curve* pts data 2 first)     1.0)
+(set! (-> *dark-needle-color-curve* pts data 2 second x)  0.15)
+(set! (-> *dark-needle-color-curve* pts data 2 second y)  0.0)
+(set! (-> *dark-needle-color-curve* pts data 2 second z)  0.25)
+(set! (-> *dark-needle-color-curve* pts data 2 second w)  1.0)
+;; ============================================================
+(define *dark-needle-trail* (new 'loading-level 'light-trail-composition))
+
+(set! (-> *dark-needle-trail* color-mode)        (the-as uint 0))
+(set! (-> *dark-needle-trail* color-repeat-dist)  40960.0)
+(set! (-> *dark-needle-trail* alpha-1-mode)       (the-as uint 0))
+(set! (-> *dark-needle-trail* alpha-2-mode)       (the-as uint 6))
+(set! (-> *dark-needle-trail* base-alpha)          1.0)
+(set! (-> *dark-needle-trail* alpha-repeat-dist)   94208.0)
+(set! (-> *dark-needle-trail* width-mode)         (the-as uint 2))
+(set! (-> *dark-needle-trail* base-width)          8192.0)
+(set! (-> *dark-needle-trail* width-repeat-dist)   12288.0)
+(set! (-> *dark-needle-trail* uv-mode)            (the-as uint 0))
+(set! (-> *dark-needle-trail* uv-repeat-dist)      163840.0)
+(set! (-> *dark-needle-trail* lie-mode)           (lie-mode appearance0))
+(set! (-> *dark-needle-trail* max-age)            (seconds 0.5))
+(set! (-> *dark-needle-trail* tex-id)             (new 'static 'texture-id :index #xf :page #x5))
+(set! (-> *dark-needle-trail* width-curve)        (the-as curve2d-piecewise *curve-linear-up*))
+(set! (-> *dark-needle-trail* color-curve)        (the-as curve-color-piecewise *dark-needle-color-curve*))
+(set! (-> *dark-needle-trail* alpha-curve-1)      (the-as curve2d-piecewise *curve-linear-down*))
+(set! (-> *dark-needle-trail* alpha-curve-2)      #f)
+(set! (-> *dark-needle-trail* zbuffer?)            #f)
+(vector-copy! (-> *dark-needle-trail* lie-vector) *up-vector*)
+(set! (-> *dark-needle-trail* use-tape-mode?)      #f)
+(set! (-> *dark-needle-trail* blend-mode)         (the-as uint 1))
+(set! (-> *dark-needle-trail* frame-stagger)      (the-as uint 1))
+
+;; ============================================================
+;; light-trail-tracker-dark-needle
+;; Matches light-trail-tracker-blue-3 exactly.
+;; ============================================================
+(deftype light-trail-tracker-dark-needle (light-trail-tracker-projectile)
+  ()
+  )
+
+(defmethod should-track? ((this light-trail-tracker-dark-needle) (arg0 process-focusable))
+  #t
+  )
+
+;; ============================================================
+;; dark-needle-shot projectile type
+;; ============================================================
+(declare-type dark-needle-shot projectile)
 (deftype dark-needle-shot (projectile)
   ((hit-actor?              symbol)
    (start-pos               vector  :inline)
@@ -110,15 +187,7 @@
   )
 
 (defmethod projectile-method-25 ((this dark-needle-shot))
-  (vector-copy! (-> *launch-matrix* trans) (-> this root trans))
-  (sp-launch-particles-var
-    *sp-particle-system-2d*
-    (-> *part-id-table* 5273)
-    *launch-matrix*
-    (the-as sparticle-launch-state #f)
-    (the-as sparticle-launch-control #f)
-    1.0
-    )
+  ;; Visual handled by light-trail-tracker-dark-needle child
   0
   (none)
   )
@@ -133,6 +202,31 @@
   (set! (-> this vehicle-impulse-factor) 2.0)
   (set! (-> this max-hits) 1)
   (set! (-> this size-scalar) 1.0)
+  (vector-copy! (-> this start-pos) (-> this root trans))
+  ;; Spawn light trail tracker -- vanilla pattern from gun-blue-shot-3
+  (let ((s5-0 (new 'stack-no-clear 'light-trail-tracker-spawn-params)))
+    (set! (-> s5-0 tracked-obj) (process->handle this))
+    (set! (-> s5-0 appearance) *dark-needle-trail*)
+    (set! (-> s5-0 max-num-crumbs) 30)
+    (set! (-> s5-0 track-immediately?) #t)
+    (let* ((v1-0 (estimate-light-trail-mem-usage
+                   (the-as uint (-> s5-0 max-num-crumbs))
+                   (the-as uint (= (-> s5-0 appearance lie-mode) (lie-mode use-two-strips)))
+                   )
+                 )
+           (s4-0 (get-process *default-dead-pool* light-trail-tracker-dark-needle (+ v1-0 #x8000) 1))
+           )
+      (format #t "[DN] crumbs=~D mem=~D proc=~A~%" (-> s5-0 max-num-crumbs) (+ v1-0 8192) s4-0)
+      (when s4-0
+        (let ((t9-0 (method-of-type process activate)))
+          (t9-0 s4-0 this "light-trail" (the-as pointer #x70004000))
+          )
+        (run-now-in-process s4-0 light-trail-tracker-init-by-other s5-0)
+        (format #t "[DN] after=~A~%" s4-0)
+        (-> s4-0 ppointer)
+        )
+      )
+    )
   0
   (none)
   )
@@ -153,7 +247,10 @@
     )
   )
 
-  (defun dark-needle-spawn-single ((fire-point vector) (aim-pos vector) (angle-offset float))
+;; ============================================================
+;; dark-needle-spawn-single
+;; ============================================================
+(defun dark-needle-spawn-single ((fire-point vector) (aim-pos vector) (angle-offset float))
   (let ((needle-dir (new 'stack-no-clear 'vector))
         (fire-dir   (new 'stack-no-clear 'vector))
         )
@@ -193,6 +290,9 @@
   (none)
   )
 
+;; ============================================================
+;; dark-needle-do-spawn
+;; ============================================================
 (defun dark-needle-do-spawn ((level int))
   (when *target*
     (let ((fire-point (new 'stack-no-clear 'vector))
@@ -218,6 +318,9 @@
   (none)
   )
 
+;; ============================================================
+;; dark-needle-circle-check
+;; ============================================================
 (defun dark-needle-circle-check ()
   (when (and *djak-ability-mode* *target*)
     (let ((cpad-num (-> *target* control cpad number)))

@@ -8,6 +8,10 @@
 (define-extern *darkjak-ball-lightning* lightning-appearance)
 (define-extern target-darkjak-giant (state target))
 
+(define-extern *dark-needle-fire-pending* symbol)
+(define-extern *dark-needle-fire-level*   int)
+(define-extern dark-needle-do-spawn (function int none))
+
 
 
 ;; DECOMP BEGINS
@@ -763,6 +767,12 @@
 
     (djak-ability-check-toggle)
     (djak-shot-check-input)
+    (dark-needle-circle-check)
+    (when (and *dark-needle-fire-pending* *target*)
+  (set! *dark-needle-fire-pending* #f)
+  (dark-needle-do-spawn *dark-needle-fire-level*)
+    )
+
     (cond
       (*djak-ability-mode*
        (set-vector! (-> self draw color-emissive) 1.0 0.0 1.0 1.0)
