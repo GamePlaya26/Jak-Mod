@@ -76,8 +76,8 @@
 (allocate! *dark-needle-color-curve* 3 'loading-level #f)
 ;; tip: bright purple-white core
 (set! (-> *dark-needle-color-curve* pts data 0 first)     0.0)
-(set! (-> *dark-needle-color-curve* pts data 0 second x)  1.0)
-(set! (-> *dark-needle-color-curve* pts data 0 second y)  0.6)
+(set! (-> *dark-needle-color-curve* pts data 0 second x)  0.6)
+(set! (-> *dark-needle-color-curve* pts data 0 second y)  0.0)
 (set! (-> *dark-needle-color-curve* pts data 0 second z)  1.0)
 (set! (-> *dark-needle-color-curve* pts data 0 second w)  1.0)
 ;; mid: deep purple
@@ -102,12 +102,12 @@
 (set! (-> *dark-needle-trail* base-alpha)          1.0)
 (set! (-> *dark-needle-trail* alpha-repeat-dist)   94208.0)
 (set! (-> *dark-needle-trail* width-mode)         (the-as uint 2))
-(set! (-> *dark-needle-trail* base-width)          8192.0)
+(set! (-> *dark-needle-trail* base-width)          21192.0)
 (set! (-> *dark-needle-trail* width-repeat-dist)   12288.0)
 (set! (-> *dark-needle-trail* uv-mode)            (the-as uint 0))
 (set! (-> *dark-needle-trail* uv-repeat-dist)      163840.0)
 (set! (-> *dark-needle-trail* lie-mode)           (lie-mode appearance0))
-(set! (-> *dark-needle-trail* max-age)            (seconds 0.5))
+(set! (-> *dark-needle-trail* max-age)            (seconds 1.5))
 (set! (-> *dark-needle-trail* tex-id)             (new 'static 'texture-id :index #xf :page #x5))
 (set! (-> *dark-needle-trail* width-curve)        (the-as curve2d-piecewise *curve-linear-up*))
 (set! (-> *dark-needle-trail* color-curve)        (the-as curve-color-piecewise *dark-needle-color-curve*))
@@ -194,7 +194,7 @@
 
 (defmethod init-proj-settings! ((this dark-needle-shot))
   (set! (-> this attack-mode) 'dark-smack)
-  (set! (-> this max-speed) 327680.0)
+  (set! (-> this max-speed) 89000.0)
   (set! (-> this move) (the-as (function projectile none) dark-needle-shot-move))
   (set! (-> this timeout) (seconds 3))
   (set! (-> this damage) 3.0)
@@ -207,7 +207,7 @@
   (let ((s5-0 (new 'stack-no-clear 'light-trail-tracker-spawn-params)))
     (set! (-> s5-0 tracked-obj) (process->handle this))
     (set! (-> s5-0 appearance) *dark-needle-trail*)
-    (set! (-> s5-0 max-num-crumbs) 30)
+    (set! (-> s5-0 max-num-crumbs) 60)
     (set! (-> s5-0 track-immediately?) #t)
     (let* ((v1-0 (estimate-light-trail-mem-usage
                    (the-as uint (-> s5-0 max-num-crumbs))
@@ -276,7 +276,7 @@
         (set! (-> gp-0 attack-id) a0-0)
         )
       (set! (-> gp-0 timeout) (seconds 3))
-      (vector-float*! (-> gp-0 vel) needle-dir 327680.0)
+      (vector-float*! (-> gp-0 vel) needle-dir 89000.0)
       (let ((needle-proc (get-process *default-dead-pool* dark-needle-shot #x8000 1)))
         (when needle-proc
           (activate needle-proc *target* "dark-needle" (the-as pointer #x70004000))
