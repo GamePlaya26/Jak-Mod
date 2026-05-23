@@ -276,7 +276,7 @@
         (set! (-> gp-0 attack-id) a0-0)
         )
       (set! (-> gp-0 timeout) (seconds 3))
-      (vector-float*! (-> gp-0 vel) needle-dir 89000.0)
+      (vector-float*! (-> gp-0 vel) needle-dir 84000.0)
       (let ((needle-proc (get-process *default-dead-pool* dark-needle-shot #x8000 1)))
         (when needle-proc
           (activate needle-proc *target* "dark-needle" (the-as pointer #x70004000))
