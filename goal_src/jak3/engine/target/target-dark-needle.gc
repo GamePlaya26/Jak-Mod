@@ -102,7 +102,7 @@
 (set! (-> *dark-needle-trail* base-alpha)          1.0)
 (set! (-> *dark-needle-trail* alpha-repeat-dist)   94208.0)
 (set! (-> *dark-needle-trail* width-mode)         (the-as uint 2))
-(set! (-> *dark-needle-trail* base-width)          21192.0)
+(set! (-> *dark-needle-trail* base-width)          17192.0)
 (set! (-> *dark-needle-trail* width-repeat-dist)   12288.0)
 (set! (-> *dark-needle-trail* uv-mode)            (the-as uint 0))
 (set! (-> *dark-needle-trail* uv-repeat-dist)      163840.0)
@@ -277,7 +277,7 @@
   (let ((s5-0 (new 'stack-no-clear 'light-trail-tracker-spawn-params)))
     (set! (-> s5-0 tracked-obj) (process->handle this))
     (set! (-> s5-0 appearance) *dark-needle-trail*)
-    (set! (-> s5-0 max-num-crumbs) 60)
+    (set! (-> s5-0 max-num-crumbs) 90)
     (set! (-> s5-0 track-immediately?) #t)
     (let* ((v1-0 (estimate-light-trail-mem-usage
                    (the-as uint (-> s5-0 max-num-crumbs))
