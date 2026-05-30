@@ -1,0 +1,133 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-dark-zone.gc
+;; name in dgo: target-dark-zone
+;; dgos: GAME
+
+(define-extern *djak-ability-mode* symbol)
+(define-extern gravity-ring type)
+(define-extern gravity-ring-init-by-other (function vector symbol float float float time-frame object :behavior gravity-ring))
+
+;; ============================================================
+;; Globals
+;; ============================================================
+(define *djak-zone-active* #f)
+(define *djak-zone-ring-timer* 0)
+(define *djak-zone-ring-interval* 90) ;; spawn ring batch every 1.5s
+
+;; ============================================================
+;; djak-zone-spawn-rings
+;; Spawns a batch of gravity-ring processes at Jak's position.
+;; ============================================================
+(defun djak-zone-spawn-rings ((center vector))
+  (let ((f30-0 4.0)
+        (gp-0 (current-time))
+        )
+    (dotimes (i 5)
+      (process-spawn gravity-ring
+        center
+        #f
+        122880.0
+        1.5
+        f30-0
+        (+ gp-0 (the time-frame (* i 9)))
+        :name "gravity-ring"
+        :to *target*
+        )
+      (set! f30-0 (+ -0.6 f30-0))
+      )
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-zone-circle-check
+;; Called every frame from target-darkjak-process.
+;; Circle toggles the zone on/off.
+;; Directly freezes actors and manages ring visuals.
+;; ============================================================
+(defun djak-zone-circle-check ()
+  (when (and *djak-ability-mode* *target*)
+    (let ((cpad-num (-> *target* control cpad number)))
+      (when (cpad-pressed? cpad-num circle)
+        (let ((sname (-> *target* state name)))
+          (when (or (= sname 'target-stance)
+                    (= sname 'target-walk)
+                    (= sname 'target-duck-stance)
+                    )
+            (cond
+              ((not *djak-zone-active*)
+               (set! *djak-zone-active* #t)
+               (set! *djak-zone-ring-timer* 0)
+               (sound-play "gun-gravity")
+               (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 150 (seconds 0.2))
+               (format #t "[DJAK-ZONE] ON~%")
+               ;; Spawn initial rings immediately
+               (let ((center (new 'stack-no-clear 'vector)))
+                 (vector-copy! center (-> *target* control trans))
+                 (djak-zone-spawn-rings center)
+                 )
+               )
+              (else
+               (set! *djak-zone-active* #f)
+               (set! *djak-zone-ring-timer* 0)
+               (sound-play "gun-gravity")
+               (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 100 (seconds 0.1))
+               (format #t "[DJAK-ZONE] OFF~%")
+               )
+              )
+            )
+          )
+        )
+      )
+    )
+  ;; Per-frame logic while active
+  (when (and *djak-zone-active* *target*)
+    ;; Tick ring timer and re-spawn rings periodically
+    (+! *djak-zone-ring-timer* 1)
+    (when (>= *djak-zone-ring-timer* *djak-zone-ring-interval*)
+      (set! *djak-zone-ring-timer* 0)
+      (let ((center (new 'stack-no-clear 'vector)))
+        (vector-copy! center (-> *target* control trans))
+        (djak-zone-spawn-rings center)
+        )
+      )
+    ;; Search and freeze actors in radius
+    (let ((search-pos (new 'stack-no-clear 'vector)))
+      (vector-copy! search-pos (-> *target* control trans))
+      (+! (-> search-pos y) 4096.0)
+      (set! (-> search-pos w) 163840.0)
+      (let ((actors (new 'stack-no-clear 'array 'collide-shape 64)))
+        (countdown (i (fill-actor-list-for-box *actor-hash* search-pos actors 64))
+          (let ((cshape (-> actors i)))
+            (when (and cshape (-> cshape root-prim))
+              (let* ((proc (-> cshape process))
+                     (focusable (as-type proc process-focusable))
+                     )
+                (when (and proc
+                           focusable
+                           (logtest? (process-mask enemy guard civilian) (-> proc mask))
+                           (not (focus-test? focusable dead inactive disable))
+                           (nonzero? (-> focusable root))
+                           )
+                  (set! (-> focusable root transv x) 0.0)
+                  (set! (-> focusable root transv y) 0.0)
+                  (set! (-> focusable root transv z) 0.0)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  ;; Clear zone if ability mode turns off
+  (when (and (not *djak-ability-mode*) *djak-zone-active*)
+    (set! *djak-zone-active* #f)
+    (set! *djak-zone-ring-timer* 0)
+    )
+  0
+  (none)
+  )

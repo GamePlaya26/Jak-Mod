@@ -12,7 +12,7 @@
 
 (define-extern *djak-ability-mode* symbol)
 (define-extern projectile-init-by-other (function projectile-init-by-other-params object :behavior projectile))
-
+(define-extern dark-needle-spawn-single (function vector vector float none))
 ;; ============================================================
 ;; Charge state globals
 ;; ============================================================
@@ -22,6 +22,16 @@
 (define *dark-needle-aura-pulse-timer* 0)
 (define *dark-needle-fire-pending*     #f)
 (define *dark-needle-fire-level*       0)
+
+(define *dark-needle-cooldown* 0)
+(define *dn-spawn-pending-2* #f)
+(define *dn-spawn-pending-3* #f)
+(define *dn-spawn-timer-2* (the int 10))
+(define *dn-spawn-timer-3* (the int 20))
+;; Change the global to store a process pointer
+(define *dn-excluded-0* (the-as process #f))
+(define *dn-excluded-1* (the-as process #f))
+(define *dn-excluded-2* (the-as process #f))
 
 ;; ============================================================
 ;; defpart 5273 -- dark needle fallback particle
@@ -142,8 +152,11 @@
    (random-travel-distance  float)
    (size-scalar             float)
    )
+  (:state-methods
+    dissipate
+    impact
+    )
   )
-
 (defmethod setup-collision! ((this dark-needle-shot))
   (let ((s5-0 (new 'process 'collide-shape-moving this (collide-list-enum hit-by-player))))
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
@@ -178,7 +191,6 @@
   )
 
 (defun dark-needle-shot-move ((arg0 dark-needle-shot))
-  ;; Find nearest target once on first frame -- only targets in front of camera
   (when (= (-> arg0 desired-target) (the-as handle #f))
     (let ((best-proc (the-as process #f))
           (best-dist 204800.0)
@@ -187,20 +199,27 @@
           )
       (vector-copy! search-pos (-> arg0 root trans))
       (set! (-> search-pos w) 204800.0)
-      ;; Get camera forward vector
       (vector-normalize-copy! cam-fwd (-> (camera-matrix) fvec) 1.0)
       (let ((actors (new 'stack-no-clear 'array 'collide-shape 64)))
         (countdown (i (fill-actor-list-for-box *actor-hash* search-pos actors 64))
           (let ((cshape (-> actors i)))
-            (when cshape
-              (let ((proc (-> cshape process)))
-                (when (and proc (logtest? (process-mask enemy guard civilian) (-> proc mask)))
-                  ;; Check target is in front of camera
+            (when (and cshape (-> cshape root-prim))
+              (let* ((proc (-> cshape process))
+                     (focusable (as-type proc process-focusable))
+                     )
+                (when (and proc
+                           focusable
+                           (logtest? (process-mask enemy guard civilian) (-> proc mask))
+                           (not (focus-test? focusable dead inactive disable))
+                           (not (= (the-as int proc) (the-as int *dn-excluded-0*)))
+                           (not (= (the-as int proc) (the-as int *dn-excluded-1*)))
+                           (not (= (the-as int proc) (the-as int *dn-excluded-2*)))
+                           )
                   (let* ((to-proc (new 'stack-no-clear 'vector))
                          (dummy (vector-! to-proc (-> cshape root-prim prim-core world-sphere) search-pos))
                          (dot (vector-dot cam-fwd (vector-normalize-copy! (new 'stack-no-clear 'vector) to-proc 1.0)))
                          )
-                    (when (and (> dot 0.0)  ;; must be in front of camera
+                    (when (and (> dot 0.0)
                                (< (vector-vector-distance search-pos (-> cshape root-prim prim-core world-sphere)) best-dist)
                                )
                       (set! best-dist (vector-vector-distance search-pos (-> cshape root-prim prim-core world-sphere)))
@@ -216,7 +235,17 @@
       (if best-proc
           (begin
             (set! (-> arg0 desired-target) (process->handle best-proc))
-            (format #t "[DN-HOME] locked ~A~%" best-proc)
+            (cond
+              ((= (the-as int *dn-excluded-0*) (the-as int #f))
+               (set! *dn-excluded-0* best-proc)
+               )
+              ((= (the-as int *dn-excluded-1*) (the-as int #f))
+               (set! *dn-excluded-1* best-proc)
+               )
+              (else
+               (set! *dn-excluded-2* best-proc)
+               )
+              )
             )
           (set! (-> arg0 desired-target) (the-as handle -1))
           )
@@ -224,15 +253,24 @@
     )
   (let* ((age (- (current-time) (-> arg0 spawn-time)))
          (arc-phase (< age (seconds 0.9)))
-         (targ-proc (handle->process (-> arg0 desired-target)))
+         (raw-proc (handle->process (-> arg0 desired-target)))
+         (targ-proc (as-type raw-proc process-focusable))
          )
+    (when (and targ-proc
+               (focus-test? targ-proc dead inactive disable)
+               )
+      (set! (-> arg0 desired-target) (the-as handle -1))
+      (set! targ-proc (the-as process-focusable #f))
+      )
     (cond
       (arc-phase
         (+! (-> arg0 root transv y) (* 120123.0 (seconds-per-frame)))
         (vector-normalize! (-> arg0 root transv) (vector-length (-> arg0 root transv)))
         )
-      ((and targ-proc (nonzero? (-> (the-as process-focusable targ-proc) root)))
-       (let* ((target-pos (-> (the-as process-focusable targ-proc) root trans))
+      ((and targ-proc
+            (nonzero? (-> targ-proc root))
+            )
+       (let* ((target-pos (-> targ-proc root trans))
               (to-targ    (new 'stack-no-clear 'vector))
               (cur-speed  (vector-length (-> arg0 root transv)))
               (spread-angle (the float (the int (-> arg0 track-mode))))
@@ -248,6 +286,18 @@
        )
       )
     )
+ (when (not (= (-> arg0 desired-target) (the-as handle -1)))
+  (let* ((check-proc (handle->process (-> arg0 desired-target)))
+         (check-focusable (as-type check-proc process-focusable))
+         )
+    (when (or (not check-proc)
+              (not check-focusable)
+              (focus-test? check-focusable dead inactive)
+              )
+      (set! (-> arg0 desired-target) (the-as handle -1))
+      )
+    )
+  )
   (projectile-move-fill-line-sphere arg0)
   (if (logtest? (-> arg0 root status) (collide-status touch-surface touch-actor))
       (go (method-of-object arg0 impact))
@@ -255,6 +305,40 @@
   0
   (none)
   )
+
+(defun dark-needle-do-spawn ((level int))
+  (when *target*
+    (let ((fire-point (new 'stack-no-clear 'vector))
+          (fwd        (new 'stack-no-clear 'vector))
+          (aim-pos    (new 'stack-no-clear 'vector))
+          )
+      (vector-copy! fire-point (-> *target* control trans))
+      (+! (-> fire-point y) 4096.0)
+      (vector-copy! fwd (-> (camera-matrix) fvec))
+      (set! (-> fwd y) 0.0)
+      (vector-normalize! fwd 163840.0)
+      (vector+! aim-pos fire-point fwd)
+      ;; Reset all exclusion slots for new burst
+      (set! *dn-excluded-0* (the-as process #f))
+      (set! *dn-excluded-1* (the-as process #f))
+      (set! *dn-excluded-2* (the-as process #f))
+      (dark-needle-spawn-single fire-point aim-pos 0.0)
+      (set! *dn-spawn-pending-2* #f)
+      (set! *dn-spawn-pending-3* #f)
+      (when (>= level 2)
+        (set! *dn-spawn-timer-2* 30)
+        (set! *dn-spawn-pending-2* #t)
+        )
+      (when (>= level 3)
+        (set! *dn-spawn-timer-3* 60)
+        (set! *dn-spawn-pending-3* #t)
+        )
+      )
+    )
+  0
+  (none)
+  )
+
 
 (defmethod projectile-method-25 ((this dark-needle-shot))
   ;; Visual handled by light-trail-tracker-dark-needle child
@@ -286,13 +370,13 @@
                  )
            (s4-0 (get-process *default-dead-pool* light-trail-tracker-dark-needle (+ v1-0 #x8000) 1))
            )
-      (format #t "[DN] crumbs=~D mem=~D proc=~A~%" (-> s5-0 max-num-crumbs) (+ v1-0 8192) s4-0)
+    
       (when s4-0
         (let ((t9-0 (method-of-type process activate)))
           (t9-0 s4-0 this "light-trail" (the-as pointer #x70004000))
           )
         (run-now-in-process s4-0 light-trail-tracker-init-by-other s5-0)
-        (format #t "[DN] after=~A~%" s4-0)
+        
         (-> s4-0 ppointer)
         )
       )
@@ -303,20 +387,21 @@
 
 (defstate dissipate (dark-needle-shot)
   :virtual #t
-  :code (behavior ()
-    (suspend-for (seconds 0.3))
-    (go-virtual die)
+  :enter (behavior ()
+    (none)
     )
   )
 
 (defstate impact (dark-needle-shot)
   :virtual #t
-  :code (behavior ()
-    (suspend-for (seconds 0.3))
-    (go-virtual die)
+  :enter (behavior ()
+    (none)
     )
   )
 
+  (defmethod projectile-method-40 ((this dark-needle-shot))
+  1024
+  )
 ;; ============================================================
 ;; dark-needle-spawn-single
 ;; ============================================================
@@ -363,43 +448,22 @@
   (none)
   )
 
-;; ============================================================
-;; dark-needle-do-spawn
-;; ============================================================
-(defun dark-needle-do-spawn ((level int))
-  (when *target*
-    (let ((fire-point (new 'stack-no-clear 'vector))
-          (fwd        (new 'stack-no-clear 'vector))
-          (aim-pos    (new 'stack-no-clear 'vector))
-          )
-      (vector-copy! fire-point (-> *target* control trans))
-      (+! (-> fire-point y) 4096.0)
-      (vector-copy! fwd (-> (camera-matrix) fvec))
-      (set! (-> fwd y) 0.0)
-      (vector-normalize! fwd 163840.0)
-      (vector+! aim-pos fire-point fwd)
-      (dark-needle-spawn-single fire-point aim-pos 0.0)
-      (when (>= level 2)
-        (dark-needle-spawn-single fire-point aim-pos 2730.6667)
-        )
-      (when (>= level 3)
-        (dark-needle-spawn-single fire-point aim-pos -2730.6667)
-        )
-      )
-    )
-  0
-  (none)
-  )
 
 ;; ============================================================
 ;; dark-needle-circle-check
 ;; ============================================================
 (defun dark-needle-circle-check ()
+  ;; Tick cooldown every frame
+  (when (> *dark-needle-cooldown* 0)
+    (+! *dark-needle-cooldown* -1)
+    )
   (when (and *djak-ability-mode* *target*)
     (let ((cpad-num (-> *target* control cpad number)))
       (cond
         ((not *dark-needle-charging*)
-         (when (cpad-hold? cpad-num circle)
+         (when (and (cpad-hold? cpad-num circle)
+                    (= *dark-needle-cooldown* 0)
+                    )
            (let ((sname (-> *target* state name)))
              (when (or (= sname 'target-stance)
                        (= sname 'target-walk)
@@ -438,17 +502,59 @@
             (set! *dark-needle-charging* #f)
             (set! *dark-needle-charge-frames* 0)
             (set! *dark-needle-charge-level* 0)
+            (set! *dark-needle-cooldown* 500)
             )
            (else
-            (format #t "[DARK-NEEDLE] charging frame ~D lvl ~D~%"
-              *dark-needle-charge-frames*
-              *dark-needle-charge-level*
-              )
             )
            )
          )
         )
       )
+    )
+  ;; Deferred shot spawning -- stagger shots so they never hit simultaneously
+  (when *dn-spawn-pending-2*
+    (if (= *dn-spawn-timer-2* 0)
+        (begin
+          (when *target*
+            (let ((fire-point (new 'stack-no-clear 'vector))
+                  (fwd        (new 'stack-no-clear 'vector))
+                  (aim-pos    (new 'stack-no-clear 'vector))
+                  )
+              (vector-copy! fire-point (-> *target* control trans))
+              (+! (-> fire-point y) 4096.0)
+              (vector-copy! fwd (-> (camera-matrix) fvec))
+              (set! (-> fwd y) 0.0)
+              (vector-normalize! fwd 163840.0)
+              (vector+! aim-pos fire-point fwd)
+              (dark-needle-spawn-single fire-point aim-pos 2730.6667)
+              )
+            )
+          (set! *dn-spawn-pending-2* #f)
+          )
+        (+! *dn-spawn-timer-2* -1)
+        )
+    )
+  (when *dn-spawn-pending-3*
+    (if (= *dn-spawn-timer-3* 0)
+        (begin
+          (when *target*
+            (let ((fire-point (new 'stack-no-clear 'vector))
+                  (fwd        (new 'stack-no-clear 'vector))
+                  (aim-pos    (new 'stack-no-clear 'vector))
+                  )
+              (vector-copy! fire-point (-> *target* control trans))
+              (+! (-> fire-point y) 4096.0)
+              (vector-copy! fwd (-> (camera-matrix) fvec))
+              (set! (-> fwd y) 0.0)
+              (vector-normalize! fwd 163840.0)
+              (vector+! aim-pos fire-point fwd)
+              (dark-needle-spawn-single fire-point aim-pos -2730.6667)
+              )
+            )
+          (set! *dn-spawn-pending-3* #f)
+          )
+        (+! *dn-spawn-timer-3* -1)
+        )
     )
   (when (and (not *djak-ability-mode*) *dark-needle-charging*)
     (set! *dark-needle-charging* #f)

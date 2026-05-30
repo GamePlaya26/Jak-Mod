@@ -7,10 +7,9 @@
 
 (define-extern *darkjak-ball-lightning* lightning-appearance)
 (define-extern target-darkjak-giant (state target))
+(define-extern *djak-zone-active* symbol)
+(define-extern djak-zone-circle-check (function none))
 
-(define-extern *dark-needle-fire-pending* symbol)
-(define-extern *dark-needle-fire-level*   int)
-(define-extern dark-needle-do-spawn (function int none))
 
 
 
@@ -767,12 +766,8 @@
 
     (djak-ability-check-toggle)
     (djak-shot-check-input)
-    (dark-needle-circle-check)
-    (when (and *dark-needle-fire-pending* *target*)
-  (set! *dark-needle-fire-pending* #f)
-  (dark-needle-do-spawn *dark-needle-fire-level*)
-    )
-
+    (djak-zone-circle-check)
+   
     (cond
       (*djak-ability-mode*
        (set-vector! (-> self draw color-emissive) 1.0 0.0 1.0 1.0)
@@ -783,7 +778,7 @@
        (set-vector! (-> self draw color-emissive) 0.0 0.0 0.0 0.0)
        )
       )
-     ;; og:preserve-this GDJ upgrade check - intercept L2 before get-off logic
+     ;; mod:preserve-this GDJ upgrade check - intercept L2 before get-off logic
      (when (and (cpad-pressed? (-> self control cpad number) l2)
                 (not (logtest? (-> self darkjak stage) (darkjak-stage giant)))
                 (not *pause-lock*)

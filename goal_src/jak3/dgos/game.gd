@@ -335,6 +335,7 @@
   "target-darkjak-giant.o"
   "target-darkjak-ability.o"
   "target-dark-needle.o"
+  "target-dark-zone.o"
   "target-darkjak-aura.o"
   "target-red-eco-test.o"
   "target-yellow-eco-projectile.o"
