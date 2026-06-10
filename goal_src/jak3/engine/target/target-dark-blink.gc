@@ -1,0 +1,236 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: target-dark-blink.gc
+;; name in dgo: target-dark-blink
+;; dgos: GAME
+
+(define-extern *djak-ability-mode* symbol)
+(define-extern *djak-blink-modifier* symbol)
+(define-extern projectile-init-by-other (function projectile-init-by-other-params object :behavior projectile))
+
+;; ============================================================
+;; Globals
+;; ============================================================
+
+
+;; ============================================================
+;; defpart 5283 -- dark eco blink departure/arrival ripple
+;; ============================================================
+(defpart 5283
+  :init-specs ((:texture (water-radiate level-default-sprite))
+    (:num 8.0)
+    (:scale-x (meters 0.5))
+    (:rot-x 4)
+    (:scale-y :copy scale-x)
+    (:r 20.0 10.0)
+    (:g 0.0)
+    (:b 180.0 60.0)
+    (:a 200.0 55.0)
+    (:scalevel-x (meters 0.15) (meters 0.05))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -3.0)
+    (:timer (seconds 0.4))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    )
+  )
+
+;; ============================================================
+;; defpart 5284 -- dark eco blink trail
+;; ============================================================
+(defpart 5284
+  :init-specs ((:texture (bigpuff level-default-sprite))
+    (:num 6.0)
+    (:scale-x (meters 1.0) (meters 0.5))
+    (:rot-z (degrees 0) (degrees 360))
+    (:scale-y :copy scale-x)
+    (:r 20.0 10.0)
+    (:g 0.0)
+    (:b 160.0 60.0)
+    (:a 120.0 60.0)
+    (:scalevel-x (meters 0.01))
+    (:rotvel-z (degrees -0.3) (degrees 0.6))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -1.5)
+    (:friction 0.95)
+    (:timer (seconds 0.5))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    )
+  )
+
+;; ============================================================
+;; djak-blink-find-target
+;; Finds the nearest valid entity within 30m
+;; ============================================================
+(defun djak-blink-find-target ()
+  (let ((best-proc (the-as process #f))
+        (best-dist 122880.0) ;; 30m
+        (search-pos (new 'stack-no-clear 'vector))
+        )
+    (vector-copy! search-pos (-> *target* control trans))
+    (set! (-> search-pos w) 122880.0)
+    (let ((actors (new 'stack-no-clear 'array 'collide-shape 64)))
+      (countdown (i (fill-actor-list-for-box *actor-hash* search-pos actors 64))
+        (let ((cshape (-> actors i)))
+          (when (and cshape (-> cshape root-prim))
+            (let* ((proc (-> cshape process))
+                   (focusable (as-type proc process-focusable))
+                   )
+              (when (and proc
+                         focusable
+                         (logtest? (process-mask enemy guard civilian) (-> proc mask))
+                         (not (focus-test? focusable dead inactive disable))
+                         (nonzero? (-> focusable root))
+                         )
+                (let ((dist (vector-vector-distance
+                              (-> *target* control trans)
+                              (-> focusable root trans)
+                              )
+                            )
+                      )
+                  (when (< dist best-dist)
+                    (set! best-dist dist)
+                    (set! best-proc proc)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    best-proc
+    )
+  )
+
+;; ============================================================
+;; djak-blink-execute
+;; Teleports Jak behind the target and triggers attack
+;; ============================================================
+(defun djak-blink-execute ((target-proc process))
+  (let ((focusable (as-type target-proc process-focusable)))
+    (when (and focusable (nonzero? (-> focusable root)))
+      (let* ((entity-pos (-> focusable root trans))
+             (entity-quat (-> focusable root quat))
+             (behind-pos (new 'stack-no-clear 'vector))
+             (entity-fwd (new 'stack-no-clear 'vector))
+             )
+        ;; Spawn departure ripple at Jak's current position
+        (vector-copy! (-> *launch-matrix* trans) (-> *target* control trans))
+        (sp-launch-particles-var
+          *sp-particle-system-2d*
+          (-> *part-id-table* 5283)
+          *launch-matrix*
+          (the-as sparticle-launch-state #f)
+          (the-as sparticle-launch-control #f)
+          1.0
+          )
+        ;; Spawn trail particles at departure
+        (sp-launch-particles-var
+          *sp-particle-system-2d*
+          (-> *part-id-table* 5284)
+          *launch-matrix*
+          (the-as sparticle-launch-state #f)
+          (the-as sparticle-launch-control #f)
+          1.0
+          )
+        ;; Compute position behind entity
+        ;; Get entity forward vector from quaternion
+        (vector-z-quaternion! entity-fwd entity-quat)
+        ;; Behind = entity pos + forward * 8192 (2m behind)
+        (vector+float*! behind-pos entity-pos entity-fwd 8192.0)
+        ;; Match entity height
+        (set! (-> behind-pos y) (-> entity-pos y))
+        (set! (-> behind-pos w) 1.0)
+        ;; Teleport Jak
+        (set! (-> *target* control trans x) (-> behind-pos x))
+        (set! (-> *target* control trans y) (-> behind-pos y))
+        (set! (-> *target* control trans z) (-> behind-pos z))
+        ;; Face the entity
+        (let ((to-entity (new 'stack-no-clear 'vector)))
+          (vector-! to-entity entity-pos behind-pos)
+          (set! (-> to-entity y) 0.0)
+          (when (> (vector-length to-entity) 0.1)
+            (vector-normalize! to-entity 1.0)
+            (forward-up-nopitch->quaternion
+              (-> *target* control quat)
+              to-entity
+              *up-vector*
+              )
+            )
+          )
+        ;; Spawn arrival ripple
+        (vector-copy! (-> *launch-matrix* trans) behind-pos)
+        (sp-launch-particles-var
+          *sp-particle-system-2d*
+          (-> *part-id-table* 5283)
+          *launch-matrix*
+          (the-as sparticle-launch-state #f)
+          (the-as sparticle-launch-control #f)
+          1.0
+          )
+        ;; Camera shake
+        (activate! *camera-smush-control* 819.2 5 20 1.0 0.9 (-> *display* camera-clock))
+        ;; Trigger dark smack attack automatically
+        (let* ((v1-0 *game-info*)
+               (a0-0 (+ (-> v1-0 attack-id) 1))
+               )
+          (set! (-> v1-0 attack-id) a0-0)
+          (send-event
+            target-proc
+            'attack
+            #f
+            (static-attack-info :mask (vehicle-impulse-factor)
+              ((id a0-0)
+               (damage 5.0)
+               (vehicle-damage-factor 1.0)
+               (vehicle-impulse-factor 1.0)
+               (mode 'dark-smack)
+               (penetrate-using (penetrate dark-smack dark-skin))
+               (attacker (process->handle *target*))
+               (attacker-velocity *zero-vector*)
+               )
+              )
+            )
+          )
+        ;; Sound
+        (sound-play "warp-in")
+        (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 200 (seconds 0.15))
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-blink-check-input
+;; Called every frame from target-darkjak-process
+;; ============================================================
+(defun djak-blink-check-input ()
+  (when (and *djak-ability-mode* *target*)
+    (let ((cpad-num (-> *target* control cpad number)))
+      ;; Blink Strike on square while blink modifier active
+      (when (and *djak-blink-modifier*
+                 (cpad-pressed? cpad-num square)
+                 (not *pause-lock*)
+                 )
+        ;; Consume square so djak-shot-check-input doesn't also fire
+        (logclear! (-> *cpad-list* cpads cpad-num button0-abs 0) (pad-buttons square))
+        (logclear! (-> *cpad-list* cpads cpad-num button0-rel 0) (pad-buttons square))
+        (let ((targ (djak-blink-find-target)))
+          (when targ
+            (format #t "[DJAK-BLINK] blinking to ~A~%" targ)
+            (djak-blink-execute targ)
+            )
+          )
+        )
+      )
+    )
+  ;; Clear blink modifier if ability mode turns off
+  (when (and (not *djak-ability-mode*) *djak-blink-modifier*)
+    (set! *djak-blink-modifier* #f)
+    )
+  0
+  (none)
+  )

@@ -7,6 +7,7 @@
 
 (define-extern sparticle-lightning-2d-spline-align-plus-rotz (function object sparticle-cpuinfo sprite-vec-data-2d object none))
 (define-extern missile-bot type)
+(define-extern *djak-zone-color-latch* time-frame)
 (define-extern market-object type)
 (define-extern fruit-stand type)
 (declare-type market-object process-drawable)
@@ -3105,6 +3106,8 @@
 
 ;; WARN: Return type mismatch float vs none.
 (defmethod gravity-ring-method-21 ((this gravity-ring))
+
+
   (let* ((a0-1 *time-of-day-context*)
          (v1-0 (-> a0-1 light-group))
          (s4-0 (-> v1-0 0 ambi color))
@@ -3124,6 +3127,9 @@
            (s4-1 0)
            )
       (cond
+          ((>= *djak-zone-color-latch* (current-time))
+          (set-vector! s5-1 0.3 0.0 0.9 0.25)
+         )
         ((or (= (level-status? *level* 'desert #f) 'active)
              (= (level-status? *level* 'waswide #f) 'active)
              (= (level-status? *level* 'wasdoors #f) 'active)
@@ -3166,7 +3172,7 @@
       (let ((f26-0 1.1)
             (f28-0 0.5)
             )
-        (set! (-> this max-radius) 102400.0)
+            (set! (-> this max-radius) 102400.0)
         (if (-> this reverse?)
             (set! f24-0 (- 1.0 f24-0))
             )

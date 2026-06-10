@@ -1,0 +1,539 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; draw-beam is defined in gun-util.gc (GAME DGO) — forward-declare so the compiler
+;; can resolve it before gun-util.gc is processed in our compilation unit.
+(define-extern draw-beam (function sparticle-launcher vector vector symbol none))
+
+;; name: target-dark-doppel.gc
+;; Dark Jak Orbital Defense System.
+;; 3 orbs orbit Jak at 5m radius, each autonomously firing orb-bolt projectiles
+;; at the nearest enemy every 5 seconds (staggered, 360-degree targeting).
+;; orb-bolt is a projectile subtype modeled after metalhead-shot:
+;;   - draw-beam laser trail from tail to head
+;;   - glow head particle each frame
+;;   - impact reuses group-metalhead-shot-hit (already dark purple)
+
+;; ============================================================
+;; Orb visual parts
+;; ============================================================
+
+;; 5275 -- orb core glow (bright purple, barely moves)
+(defpart 5275
+  :init-specs ((:texture (glow level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 1.2) (meters 0.3))
+    (:rot-x (degrees 4.5))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 160.0 40.0)
+    (:g 0.0)
+    (:b 255.0)
+    (:a 128.0 40.0)
+    (:omega (degrees 4515.75))
+    (:scalevel-x (meters -0.004))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -1.6)
+    (:timer (seconds 0.2))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14 glow))
+    (:userdata 1024.0)
+    )
+  )
+
+;; 5276 -- orb soft ambient (glow-soft, wider, lower alpha)
+(defpart 5276
+  :init-specs ((:texture (glow-soft level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 2.0))
+    (:rot-z (degrees 0) (degrees 360))
+    (:scale-y :copy scale-x)
+    (:r 80.0)
+    (:g 0.0)
+    (:b 180.0)
+    (:a 48.0)
+    (:scalevel-x (meters -0.05))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -1.2)
+    (:timer (seconds 0.135))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))
+    )
+  )
+
+;; ============================================================
+;; orb-bolt projectile parts
+;; ============================================================
+
+;; 5277 -- bolt beam body (gun-enemy-beam recolored dark purple)
+;; Used with draw-beam — birth-func-set-quat orients it along travel direction
+(defpart 5277
+  :init-specs ((:texture (gun-enemy-beam level-default-sprite))
+    (:birth-func 'birth-func-set-quat)
+    (:num 1.0)
+    (:scale-x (meters 0.2))
+    (:scale-y (meters 8))
+    (:r 60.0)
+    (:g 0.0)
+    (:b 200.0)
+    (:a 64.0 64.0)
+    (:timer (seconds 0.017))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-14 left-multiply-quat))
+    )
+  )
+
+;; 5278 -- bolt head glow (bright purple-white core at leading edge)
+(defpart 5278
+  :init-specs ((:texture (glow level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 1.5))
+    (:rot-x (degrees 4.5))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 180.0)
+    (:g 0.0 64.0)
+    (:b 255.0)
+    (:a 220.0)
+    (:omega (degrees 4515.75))
+    (:scalevel-x (meters 0.08))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -5.5)
+    (:timer (seconds 0.135))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14 glow))
+    (:userdata 1024.0)
+    )
+  )
+
+;; 5279 -- bolt soft glow halo (glow-soft around the head)
+(defpart 5279
+  :init-specs ((:texture (glow-soft level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 2.5))
+    (:rot-z (degrees 0) (degrees 360))
+    (:scale-y :copy scale-x)
+    (:r 80.0)
+    (:g 0.0)
+    (:b 180.0)
+    (:a 56.0)
+    (:scalevel-x (meters -0.06))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -1.4)
+    (:timer (seconds 0.135))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))
+    )
+  )
+
+;; ============================================================
+;; orb-bolt projectile type
+;; Mirrors metalhead-shot structure: tail-pos tracks the spawn point
+;; so draw-beam can render the beam from origin to current head position.
+;; ============================================================
+(deftype orb-bolt (projectile)
+  ((tail-pos   vector    :inline)
+   (fire-pos   vector    :inline)
+   (fire-sound sound-id)
+   )
+  )
+
+;; ============================================================
+;; orb-bolt-move
+;; Straight-line movement + collision check → impact state
+;; Identical structure to metalhead-shot-move.
+;; ============================================================
+(defmethod deactivate ((this orb-bolt))
+  (sound-stop (-> this fire-sound))
+  (call-parent-method this)
+  (none)
+  )
+
+;; ============================================================
+;; orb-bolt-move — straight-line movement, no collision system
+;; ============================================================
+(defun orb-bolt-move ((arg0 orb-bolt))
+  (set! (-> arg0 root status) (collide-status))
+  (vector+! (-> arg0 root trans) (-> arg0 root trans) (-> arg0 root transv))
+  (update-transforms (-> arg0 root))
+  0
+  (none)
+  )
+
+(defstate impact (orb-bolt)
+  :virtual #t
+  :code (behavior ()
+    (projectile-method-26 self)
+    (deactivate self)
+    )
+  )
+
+(defstate dissipate (orb-bolt)
+  :virtual #t
+  :code (behavior ()
+    (deactivate self)
+    )
+  )
+
+;; ============================================================
+;; projectile-method-24  (muzzle flash — called once on spawn)
+;; ============================================================
+(defmethod projectile-method-24 ((this orb-bolt))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; projectile-method-25  (trail particles — called every frame)
+;; ============================================================
+(defmethod projectile-method-25 ((this orb-bolt))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; projectile-method-26  (impact visuals)
+;; ============================================================
+(defmethod projectile-method-26 ((this orb-bolt))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; setup-collision!  (thin sphere, hits enemies + background)
+;; ============================================================
+(defmethod setup-collision! ((this orb-bolt))
+  (let ((s5-0 (new 'process 'collide-shape-moving this (collide-list-enum hit-by-player))))
+    (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
+    (set! (-> s5-0 reaction) cshape-reaction-projectile)
+    (set! (-> s5-0 no-reaction)
+          (the-as (function collide-shape-moving collide-query vector vector object) nothing))
+    (let ((v1-0 (new 'process 'collide-shape-prim-sphere s5-0 (the-as uint 0))))
+      (set! (-> v1-0 prim-core collide-as) (collide-spec))
+      (set! (-> v1-0 prim-core collide-with)
+            (collide-spec crate civilian enemy vehicle-sphere hit-by-others-list))
+      (set! (-> v1-0 prim-core action) (collide-action solid))
+      (set-vector! (-> v1-0 local-sphere) 0.0 0.0 0.0 2048.0)
+      (set! (-> s5-0 total-prims) (the-as uint 1))
+      (set! (-> s5-0 root-prim) v1-0)
+      )
+    (set! (-> s5-0 nav-radius) (* 0.75 (-> s5-0 root-prim local-sphere w)))
+    (let ((v1-1 (-> s5-0 root-prim)))
+      (set! (-> s5-0 backup-collide-as)   (-> v1-1 prim-core collide-as))
+      (set! (-> s5-0 backup-collide-with) (-> v1-1 prim-core collide-with))
+      )
+    (set! (-> s5-0 max-iteration-count) (the-as uint 2))
+    (set! (-> s5-0 event-self) 'touched)
+    (set! (-> this root) s5-0)
+    )
+  (set! (-> this root pat-ignore-mask)
+        (new 'static 'pat-surface
+             :noentity #x1 :nojak #x1 :probe #x1 :noproj #x1 :noendlessfall #x1 :board #x1))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; init-proj-settings!
+;; ============================================================
+(defmethod init-proj-settings! ((this orb-bolt))
+  (vector-copy! (-> this tail-pos) (-> this root trans))
+  (set! (-> this attack-mode)            'dark-smack)
+  (set! (-> this max-speed)              532480.0)
+  (set! (-> this move) orb-bolt-move)
+  (set! (-> this timeout)                (seconds 1.5))
+  (set! (-> this damage)                 6.0)
+  (set! (-> this vehicle-damage-factor)  1.0)
+  (set! (-> this vehicle-impulse-factor) 2.0)
+  (set! (-> this max-hits)               1)
+  (set! (-> this fire-sound)             (new-sound-id))
+  (vector-copy! (-> this fire-pos) (-> this root trans))
+  0
+  (none)
+  )
+
+;; ============================================================
+;; Constants
+;; ============================================================
+(define *doppel-orb-radius*    20480.0)   ;; 5m
+(define *doppel-orb-height*    4915.2)    ;; 1.2m
+(define *doppel-orb-speed*     136.533)   ;; binary-angle units/frame = 8s orbit
+(define *doppel-fire-interval* 300)       ;; 5s at 60fps
+(define *doppel-fire-stagger*  100)       ;; 100 frames between each orb's first shot
+(define *doppel-search-radius* 204800.0)  ;; 50m
+
+;; ============================================================
+;; Globals (extern-compatible names retained)
+;; ============================================================
+(define *doppel-active*        #f)
+(define *doppel-draining*      #f)
+(define *doppel-drain-counter* (the int 0))
+(define *doppel-handle*        (the-as handle 0))
+(define *doppel-write-idx*     (the int 0))
+(define *doppel-delay-frames*  30)
+(define *doppel-buffer-size*   60)
+(define *doppel-buffer*        (the-as pointer #f))
+(define *doppel-timer-start*   (the time-frame 0))
+(define *doppel-duration*      (seconds 15))
+
+(define *doppel-orb-angle-0*   0.0)
+(define *doppel-orb-angle-1*   21845.333)
+(define *doppel-orb-angle-2*   43690.667)
+(define *doppel-fire-timer-0*  0)
+(define *doppel-fire-timer-1*  100)
+(define *doppel-fire-timer-2*  200)
+
+(define *djak-blink-modifier*  #f)
+(define *djak-doppel-modifier* #f)
+
+;; ============================================================
+;; Stubs
+;; ============================================================
+(defun doppel-stamp-shot ((origin vector) (dir vector) (target handle)) (none))
+(defun doppel-stamp-punch ((origin vector) (dir vector)) (none))
+(defun doppel-stamp-blink ((target handle)) (none))
+(defun doppel-stamp-zone-toggle () (none))
+
+;; ============================================================
+;; doppel-deactivate
+;; ============================================================
+(defun doppel-deactivate ()
+  (when *doppel-active*
+    (set! *doppel-active* #f)
+    (format #t "[DOPPEL] deactivated~%")
+    )
+  (none)
+  )
+
+;; ============================================================
+;; doppel-get-orb-pos
+;; ============================================================
+(defun doppel-get-orb-pos ((out vector) (angle float))
+  (let ((jak-pos (-> *target* control trans)))
+    (set! (-> out x) (+ (-> jak-pos x) (* *doppel-orb-radius* (sin angle))))
+    (set! (-> out y) (+ (-> jak-pos y) *doppel-orb-height*))
+    (set! (-> out z) (+ (-> jak-pos z) (* *doppel-orb-radius* (cos angle))))
+    (set! (-> out w) 1.0)
+    )
+  (none)
+  )
+
+;; ============================================================
+;; doppel-find-nearest-enemy
+;; 360-degree search, no camera-facing filter.
+;; ============================================================
+(defun doppel-find-nearest-enemy ((from-pos vector))
+  (let* ((result     (the-as handle 0))
+         (sphere     (new 'stack-no-clear 'vector))
+         (actor-list (new 'stack-no-clear 'array 'collide-shape 384))
+         )
+    (vector-copy! sphere from-pos)
+    (set! (-> sphere w) *doppel-search-radius*)
+    (let ((hit-count (fill-actor-list-for-box *actor-hash* sphere actor-list 384)))
+      (let ((best-dist *doppel-search-radius*))
+        (dotimes (i hit-count)
+          (let ((proc (as-type (-> actor-list i) collide-shape)))
+            (when proc
+              (let ((fproc (as-type (-> proc process) process-focusable)))
+                (when (and fproc
+                           (logtest? (process-mask enemy civilian guard bot) (-> fproc mask))
+                           (not (focus-test? fproc dead))
+                           (nonzero? (-> fproc root))
+                           )
+                  (let ((dist (vector-vector-distance from-pos (-> fproc root trans))))
+                    (when (< dist best-dist)
+                      (set! best-dist dist)
+                      (set! result (process->handle fproc))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    result
+    )
+  )
+
+;; ============================================================
+;; doppel-fire-orb
+;; Spawns an orb-bolt from orb-pos toward a pre-found target handle.
+;; Takes the handle directly to avoid a second fill-actor-list-for-box call.
+;; ============================================================
+(define-extern doppel-fire-orb (function vector handle none))
+(defun doppel-fire-orb ((orb-pos vector) (target-handle handle))
+  (let ((home-proc (handle->process target-handle)))
+    (format #t "[FIRE] home-proc=~A~%" (nonzero? home-proc))
+    (when (and home-proc (nonzero? (-> (the-as process-focusable home-proc) root)))
+      (let ((gp-0 (new 'stack-no-clear 'projectile-init-by-other-params)))
+        (set! (-> gp-0 ent)             (-> *target* entity))
+        (set! (-> gp-0 charge)          1.0)
+        (set! (-> gp-0 options)         (projectile-options))
+        (logclear! (-> gp-0 options) (projectile-options po14 po15 po16))
+        (set! (-> gp-0 notify-handle)   (the-as handle 0))
+        (set! (-> gp-0 owner-handle)    (process->handle *target*))
+        (set! (-> gp-0 target-handle)   (the-as handle 0))
+        (set! (-> gp-0 target-pos quad) (the-as uint128 0))
+        (set! (-> gp-0 ignore-handle)   (process->handle *target*))
+        (let* ((v1-0 *game-info*)
+               (a0-0 (+ (-> v1-0 attack-id) 1))
+               )
+          (set! (-> v1-0 attack-id) a0-0)
+          (set! (-> gp-0 attack-id) a0-0)
+          )
+        (set! (-> gp-0 timeout) (seconds 1.5))
+        (vector-copy! (-> gp-0 pos) orb-pos)
+        (let ((to-target (new 'stack-no-clear 'vector)))
+          (vector-! to-target (-> (the-as process-focusable home-proc) root trans) orb-pos)
+          (+! (-> to-target y) 4096.0)
+          (vector-normalize-copy! (-> gp-0 vel) to-target 532480.0)
+          )
+        (vector-copy! (-> *launch-matrix* trans) orb-pos)
+        (let ((s3-0 (get-process *default-dead-pool* orb-bolt #x8000 1)))
+          (format #t "[FIRE] get-process ok=~A~%" (nonzero? s3-0))
+          (when s3-0
+            (activate s3-0 *target* "orb-bolt" (the-as pointer #x70004000))
+            (run-now-in-process s3-0 projectile-init-by-other gp-0)
+            )
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+;; ============================================================
+;; doppel-spawn-orb-particles
+;; ============================================================
+(defun doppel-spawn-orb-particles ((orb-pos vector))
+  (set! (-> *launch-matrix* trans quad) (-> orb-pos quad))
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5275)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5276)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (none)
+  )
+
+;; ============================================================
+;; doppel-record-frame  — advance orbit angles each frame
+;; ============================================================
+(defun doppel-record-frame ()
+  (when *doppel-active*
+    (set! *doppel-orb-angle-0* (the float (mod (the int (+ *doppel-orb-angle-0* *doppel-orb-speed*)) 65536)))
+    (set! *doppel-orb-angle-1* (the float (mod (the int (+ *doppel-orb-angle-1* *doppel-orb-speed*)) 65536)))
+    (set! *doppel-orb-angle-2* (the float (mod (the int (+ *doppel-orb-angle-2* *doppel-orb-speed*)) 65536)))
+    )
+  (none)
+  )
+
+;; ============================================================
+;; doppel-update-visual  — orb visuals + fire logic each frame
+;; ============================================================
+(defun doppel-update-visual ()
+  (when *doppel-active*
+    (let ((orb0 (new 'stack-no-clear 'vector))
+          (orb1 (new 'stack-no-clear 'vector))
+          (orb2 (new 'stack-no-clear 'vector))
+          )
+      (doppel-get-orb-pos orb0 *doppel-orb-angle-0*)
+      (doppel-get-orb-pos orb1 *doppel-orb-angle-1*)
+      (doppel-get-orb-pos orb2 *doppel-orb-angle-2*)
+      (doppel-spawn-orb-particles orb0)
+      (doppel-spawn-orb-particles orb1)
+      (doppel-spawn-orb-particles orb2)
+      ;; Fire timers
+      (cond
+        ((<= *doppel-fire-timer-0* 0)
+         (let ((tgt (doppel-find-nearest-enemy orb0)))
+           (when (nonzero? tgt)
+             (doppel-fire-orb orb0 tgt)
+             )
+           )
+         (set! *doppel-fire-timer-0* *doppel-fire-interval*)
+         )
+        (else (+! *doppel-fire-timer-0* -1))
+        )
+      (cond
+        ((<= *doppel-fire-timer-1* 0)
+         (let ((tgt (doppel-find-nearest-enemy orb1)))
+           (when (nonzero? tgt)
+             (doppel-fire-orb orb1 tgt)
+             )
+           )
+         (set! *doppel-fire-timer-1* *doppel-fire-interval*)
+         )
+        (else (+! *doppel-fire-timer-1* -1))
+        )
+      (cond
+        ((<= *doppel-fire-timer-2* 0)
+         (let ((tgt (doppel-find-nearest-enemy orb2)))
+           (when (nonzero? tgt)
+             (doppel-fire-orb orb2 tgt)
+             )
+           )
+         (set! *doppel-fire-timer-2* *doppel-fire-interval*)
+         )
+        (else (+! *doppel-fire-timer-2* -1))
+        )
+      )
+    )
+  (none)
+  )
+
+;; ============================================================
+;; doppel-timer-update  — retained for extern compat
+;; ============================================================
+(defun doppel-timer-update ()
+  (none)
+  )
+
+;; ============================================================
+;; doppel-activate
+;; ============================================================
+(defun doppel-activate ()
+  (cond
+    (*doppel-active*
+     (format #t "[DOPPEL] already active~%")
+     )
+    (else
+     (format #t "[DOPPEL] orbital defense activated~%")
+     (set! *doppel-active*       #t)
+     (set! *doppel-orb-angle-0*  0.0)
+     (set! *doppel-orb-angle-1*  21845.333)
+     (set! *doppel-orb-angle-2*  43690.667)
+     (set! *doppel-fire-timer-0* 0)
+     (set! *doppel-fire-timer-1* *doppel-fire-stagger*)
+     (set! *doppel-fire-timer-2* (* *doppel-fire-stagger* 2))
+     )
+    )
+  (none)
+  )
+
+;; ============================================================
+;; djak-modifier-check-input
+;; ============================================================
+(defun djak-modifier-check-input ()
+  (when (and (cpad-hold? (-> *target* control cpad number) l1)
+             (cpad-pressed? (-> *target* control cpad number) x))
+    (set! *djak-blink-modifier* (not *djak-blink-modifier*))
+    (format #t "[MOD] blink=~A~%" *djak-blink-modifier*)
+    (cpad-clear! (-> *target* control cpad number) x)
+    )
+  (when (and (cpad-hold? (-> *target* control cpad number) l1)
+             (cpad-pressed? (-> *target* control cpad number) circle))
+    (set! *djak-doppel-modifier* (not *djak-doppel-modifier*))
+    (when (and (not *djak-doppel-modifier*) *doppel-active*)
+      (doppel-deactivate)
+      )
+    (format #t "[MOD] doppel=~A~%" *djak-doppel-modifier*)
+    (cpad-clear! (-> *target* control cpad number) circle)
+    )
+  (none)
+  )

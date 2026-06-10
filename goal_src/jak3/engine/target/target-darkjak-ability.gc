@@ -10,7 +10,15 @@
 ;; ============================================================
 (define-extern *darkjak-trans-mods* surface)
 (define-extern target-darkjak-end-mode (function symbol none :behavior target))
-
+(define-extern *djak-blink-modifier*  symbol)
+(define-extern *djak-doppel-modifier* symbol)
+(define-extern *doppel-active*        symbol)
+(define-extern doppel-activate        (function none))
+(define-extern doppel-deactivate      (function none))
+(define-extern doppel-record-frame    (function none))
+(define-extern doppel-update-visual   (function none))
+(define-extern doppel-timer-update    (function none))
+(define-extern djak-modifier-check-input (function none))
 ;; ============================================================
 ;; Ability mode globals
 ;; ============================================================
@@ -285,6 +293,8 @@
 (defun djak-shot-check-input ()
   (let ((square-pressed (and *djak-ability-mode*
                              *target*
+                            (not *djak-blink-modifier*);; add this
+
                              (= *djak-shot-cooldown* 0)
                              (cpad-pressed? (-> *target* control cpad number) square)
                              (not *pause-lock*)
@@ -395,15 +405,24 @@
           (> (-> *target* control ctrl-xz-vel) (meters 2.0))
           )
      (+! *gdj-step-timer* 1)
-     (when (>= *gdj-step-timer* 18)
-       (set! *gdj-step-timer* 0)
-       (activate! *camera-smush-control* 128.0 4 10 1.0 0.99 (-> *display* camera-clock))
-       (sound-play-by-name (static-sound-name "giant-step") (new-sound-id) 1024 0 0 (sound-group) #t)
-       (sound-play-by-name (static-sound-name "djak-bomb-land") (new-sound-id) 350 0 0 (sound-group) #t)
+     (let ((threshold (cond
+                        ((and *djak-zone-active* (logtest? (-> *target* darkjak stage) (darkjak-stage giant)))
+                         20) ;; 27m/s — fastest, shortest interval
+                        (*djak-zone-active*
+                         26) ;; 20m/s
+                        ((logtest? (-> *target* darkjak stage) (darkjak-stage giant))
+                         22) ;; 22m/s
+                        (else
+                         30) ;; 13m/s — slowest, longest interval
+                        )))
+       (when (>= *gdj-step-timer* threshold)
+         (set! *gdj-step-timer* 0)
+         (activate! *camera-smush-control* 204.8 4 12 1.0 0.99 (-> *display* camera-clock))
+         (sound-play "djak-strike-ko")
+         )
        )
      )
     (else
-     ;; Reset timer when standing still so first step after movement fires promptly
      (set! *gdj-step-timer* 0)
      )
     )

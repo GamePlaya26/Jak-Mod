@@ -4,32 +4,45 @@
 ;; name: target-red-eco-test.gc
 ;; name in dgo: target-red-eco-test
 ;; dgos: GAME
-;;
-;; PURPOSE: Test file -- red eco particles on Jak's body.
-;; Used to verify GAME.gd object file count limit.
 
 (define-extern *reco-active* symbol)
 
 (defun reco-particles-tick ()
-  "Spawn red eco particles while red eco is active"
   (when (and *reco-active*
              *target*
              (not (focus-test? *target* in-head))
              (not (logtest? (-> *target* draw status) (draw-control-status no-draw no-draw-temp)))
              )
+    ;; Main glow -- same pattern as vanilla red eco (eco-type 2)
     (let ((joint (rand-vu-int-range 3 (+ (-> *target* node-list length) -1))))
       (vector-copy!
         (-> *launch-matrix* trans)
         (vector<-cspace! (new 'stack-no-clear 'vector) (-> *target* node-list data joint))
         )
-      ;; red eco sparkle particles (part IDs 169/170 are vanilla red eco sparks)
       (sp-launch-particles-var
         *sp-particle-system-2d*
-        (-> *part-id-table* (if (rand-vu-percent? 0.5) 169 170))
+        (-> *part-id-table* (if (rand-vu-percent? 0.5) 802 803))
         *launch-matrix*
         (the-as sparticle-launch-state #f)
         (the-as sparticle-launch-control #f)
         1.0
+        )
+      )
+    ;; Secondary hotdot sparks -- twice like vanilla
+    (dotimes (i 2)
+      (let ((joint (rand-vu-int-range 3 (+ (-> *target* node-list length) -1))))
+        (vector-copy!
+          (-> *launch-matrix* trans)
+          (vector<-cspace! (new 'stack-no-clear 'vector) (-> *target* node-list data joint))
+          )
+        (sp-launch-particles-var
+          *sp-particle-system-2d*
+          (-> *part-id-table* 804)
+          *launch-matrix*
+          (the-as sparticle-launch-state #f)
+          (the-as sparticle-launch-control #f)
+          1.0
+          )
         )
       )
     )

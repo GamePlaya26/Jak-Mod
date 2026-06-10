@@ -4,36 +4,82 @@
 ;; name: target-dark-zone.gc
 ;; name in dgo: target-dark-zone
 ;; dgos: GAME
-
 (define-extern *djak-ability-mode* symbol)
-(define-extern gravity-ring type)
+(declare-type gravity-ring process-drawable)
+(declare-type lightning-new-tracker process)
 (define-extern gravity-ring-init-by-other (function vector symbol float float float time-frame object :behavior gravity-ring))
+(define-extern create-lightning-tracker-new (function lightning-tracker-init-params lightning-new-tracker))
 
 ;; ============================================================
 ;; Globals
 ;; ============================================================
 (define *djak-zone-active* #f)
 (define *djak-zone-ring-timer* 0)
-(define *djak-zone-ring-interval* 90) ;; spawn ring batch every 1.5s
+(define *djak-zone-ring-interval* 90)
+(define *djak-zone-color-latch* (the time-frame 0))
+(define *djak-zone-arc-timer* 0)
+(define *djak-zone-arc-interval* 215)
+(define *djak-zone-center* (new 'static 'vector))
+
+;; ============================================================
+;; Dark zone lightning appearance
+;; ============================================================
+(define *djak-zone-lightning* (new 'loading-level 'lightning-appearance))
+
+(set! (-> *djak-zone-lightning* base-alpha) 1.0)
+(set! (-> *djak-zone-lightning* tex-id) (the-as uint #x403f00))
+(set! (-> *djak-zone-lightning* blend-mode) (the-as uint 1))
+(set! (-> *djak-zone-lightning* alpha-1-curve) *curve-linear-down*)
+(set! (-> *djak-zone-lightning* alpha-1-mode) (the-as uint 0))
+(set! (-> *djak-zone-lightning* alpha-1-repeat-dist) 262144.0)
+(set! (-> *djak-zone-lightning* alpha-2-curve) #f)
+(set! (-> *djak-zone-lightning* alpha-2-mode) (the-as uint 3))
+(set! (-> *djak-zone-lightning* alpha-2-repeat-dist) 4096.0)
+(set! (-> *djak-zone-lightning* width-curve) *curve-linear-down*)
+(set! (-> *djak-zone-lightning* width-mode) (the-as uint 3))
+(set! (-> *djak-zone-lightning* width-repeat-dist) 4096.0)
+(set! (-> *djak-zone-lightning* uv-repeat-dist) 28672.0)
+(set! (-> *djak-zone-lightning* width-range-start) 3276.8)
+(set! (-> *djak-zone-lightning* width-range-end) 6553.6)
+(set! (-> *djak-zone-lightning* regenerate-time-start) (seconds 0.017))
+(set! (-> *djak-zone-lightning* regenerate-time-end) (seconds 0.033))
+(set! (-> *djak-zone-lightning* fade-time) (seconds 0.3))
+(set! (-> *djak-zone-lightning* uv-shift?) #t)
+(set! (-> *djak-zone-lightning* uv-shift-speed) (seconds -0.3))
+(set! (-> *djak-zone-lightning* use-sprite-bucket?) #t)
+(set! (-> *djak-zone-lightning* use-accurate-interp?) #t)
 
 ;; ============================================================
 ;; djak-zone-spawn-rings
-;; Spawns a batch of gravity-ring processes at Jak's position.
 ;; ============================================================
 (defun djak-zone-spawn-rings ((center vector))
   (let ((f30-0 4.0)
         (gp-0 (current-time))
         )
     (dotimes (i 5)
-      (process-spawn gravity-ring
-        center
-        #f
-        122880.0
-        1.5
-        f30-0
-        (+ gp-0 (the time-frame (* i 9)))
-        :name "gravity-ring"
-        :to *target*
+      (let ((ring-proc (get-process *default-dead-pool* gravity-ring #x4000 1)))
+        (when ring-proc
+          (let ((t9-0 (method-of-type process activate)))
+            (t9-0 ring-proc *target* "gravity-ring" (the-as pointer #x70004000))
+            )
+          (run-now-in-process
+            ring-proc
+            gravity-ring-init-by-other
+            center
+            #f
+            128880.0
+            0.8
+            f30-0
+            (+ gp-0 (the time-frame (* i 9)))
+            )
+          (let ((ring-drawable (the-as process-drawable (-> ring-proc self))))
+            (when (and ring-drawable (nonzero? (-> ring-drawable draw)))
+              (set-vector! (-> ring-drawable draw color-emissive) 0.3 0.0 0.6 1.0)
+              (set-vector! (-> ring-drawable draw color-mult) 0.1 0.0 0.3 1.0)
+              )
+            )
+          (-> ring-proc ppointer)
+          )
         )
       (set! f30-0 (+ -0.6 f30-0))
       )
@@ -43,10 +89,166 @@
   )
 
 ;; ============================================================
+;; djak-zone-spawn-lightning-column
+;; ============================================================
+(defun djak-zone-spawn-lightning-column ((center vector) (radius float))
+  (let ((num-points 12))
+    (dotimes (i num-points)
+      (let ((angle-a (* (the float i) 5461.333))
+            (angle-b (* (the float (mod (+ i 1) num-points)) 5461.333))
+            (pos-a (new 'stack-no-clear 'vector))
+            (pos-b (new 'stack-no-clear 'vector))
+            )
+        (set! (-> pos-a x) (+ (-> center x) (* radius (sin angle-a))))
+        (set! (-> pos-a y) (-> center y))
+        (set! (-> pos-a z) (+ (-> center z) (* radius (cos angle-a))))
+        (set! (-> pos-a w) 1.0)
+        (set! (-> pos-b x) (+ (-> center x) (* radius (sin angle-b))))
+        (set! (-> pos-b y) (-> center y))
+        (set! (-> pos-b z) (+ (-> center z) (* radius (cos angle-b))))
+        (set! (-> pos-b w) 1.0)
+        (let ((cq (new 'stack-no-clear 'collide-query)))
+          (vector+float*! (-> cq start-pos) pos-a *up-vector* 24576.0)
+          (set! (-> cq move-dist quad) (the-as uint128 0))
+          (set! (-> cq move-dist y) -81920.0)
+          (let ((v1-0 cq))
+            (set! (-> v1-0 radius) 40.96)
+            (set! (-> v1-0 collide-with) (collide-spec backgnd))
+            (set! (-> v1-0 ignore-process0) #f)
+            (set! (-> v1-0 ignore-process1) #f)
+            (set! (-> v1-0 ignore-pat)
+                  (new 'static 'pat-surface :noentity #x1 :nojak #x1 :probe #x1 :noendlessfall #x1 :board #x1)
+                  )
+            (set! (-> v1-0 action-mask) (collide-action solid))
+            )
+          (when (>= (fill-and-probe-using-line-sphere *collide-cache* cq) 0.0)
+            (set! (-> pos-a y) (-> cq best-other-tri intersect y))
+            )
+          )
+        (let ((cq (new 'stack-no-clear 'collide-query)))
+          (vector+float*! (-> cq start-pos) pos-b *up-vector* 24576.0)
+          (set! (-> cq move-dist quad) (the-as uint128 0))
+          (set! (-> cq move-dist y) -81920.0)
+          (let ((v1-0 cq))
+            (set! (-> v1-0 radius) 40.96)
+            (set! (-> v1-0 collide-with) (collide-spec backgnd))
+            (set! (-> v1-0 ignore-process0) #f)
+            (set! (-> v1-0 ignore-process1) #f)
+            (set! (-> v1-0 ignore-pat)
+                  (new 'static 'pat-surface :noentity #x1 :nojak #x1 :probe #x1 :noendlessfall #x1 :board #x1)
+                  )
+            (set! (-> v1-0 action-mask) (collide-action solid))
+            )
+          (when (>= (fill-and-probe-using-line-sphere *collide-cache* cq) 0.0)
+            (set! (-> pos-b y) (-> cq best-other-tri intersect y))
+            )
+          )
+        (+! (-> pos-a y) 8192.0)
+        (+! (-> pos-b y) 8192.0)
+        (let ((params (new 'stack 'lightning-tracker-init-params)))
+          (set! (-> params appearance) *djak-zone-lightning*)
+          (set! (-> params start-pt quad) (-> pos-a quad))
+          (vector-copy! (-> params end-pt) pos-b)
+          (set! (-> params lifetime) (seconds 0.4))
+          (set! (-> params num-inner-points) 8)
+          (set! (-> params inner-random-offset-size) 20480.0)
+          (set! (-> params random-offset-size-start) 10240.0)
+          (let ((tracker (create-lightning-tracker-new params)))
+            (when tracker
+              (set! (-> tracker bolt base-color)
+                    (new 'static 'rgba :r #x60 :g #x00 :b #xff :a #x80)
+                    )
+              )
+            )
+          )
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
+;; djak-zone-arc-to-entities
+;; ============================================================
+(defun djak-zone-arc-to-entities ((center vector))
+  (let ((search-pos (new 'stack-no-clear 'vector)))
+    (vector-copy! search-pos center)
+    (set! (-> search-pos w) 102400.0)
+    (let ((actors (new 'stack-no-clear 'array 'collide-shape 64)))
+      (countdown (i (fill-actor-list-for-box *actor-hash* search-pos actors 64))
+        (let ((cshape (-> actors i)))
+          (when (and cshape (-> cshape root-prim))
+            (let* ((proc (-> cshape process))
+                   (focusable (as-type proc process-focusable))
+                   )
+              (when (and proc
+                         focusable
+                         (logtest? (process-mask enemy guard civilian bot) (-> proc mask))
+                         (not (focus-test? focusable dead inactive disable))
+                         (nonzero? (-> focusable root))
+                         )
+                (let* ((angle (* (the float (rand-vu-int-range 0 65536)) 1.0))
+                       (arc-origin (new 'stack-no-clear 'vector))
+                       (entity-pos (new 'stack-no-clear 'vector))
+                       )
+                  (set! (-> arc-origin x) (+ (-> center x) (* 102400.0 (sin angle))))
+                  (set! (-> arc-origin y) (+ (-> center y) 8192.0))
+                  (set! (-> arc-origin z) (+ (-> center z) (* 102400.0 (cos angle))))
+                  (set! (-> arc-origin w) 1.0)
+                  (vector-copy! entity-pos (-> focusable root trans))
+                  (+! (-> entity-pos y) 4096.0)
+                  (let ((params (new 'stack 'lightning-tracker-init-params)))
+                    (set! (-> params appearance) *djak-zone-lightning*)
+                    (set! (-> params start-pt quad) (-> arc-origin quad))
+                    (vector-copy! (-> params end-pt) entity-pos)
+                    (set! (-> params lifetime) (seconds 0.3))
+                    (set! (-> params num-inner-points) 6)
+                    (set! (-> params inner-random-offset-size) 16384.0)
+                    (set! (-> params random-offset-size-start) 8192.0)
+                    (let ((tracker (create-lightning-tracker-new params)))
+                      (when tracker
+                        (set! (-> tracker bolt base-color)
+                              (new 'static 'rgba :r #x60 :g #x00 :b #xff :a #x80)
+                              )
+                        )
+                      )
+                    )
+                  (let* ((v1-0 *game-info*)
+                         (a0-0 (+ (-> v1-0 attack-id) 1))
+                         )
+                    (set! (-> v1-0 attack-id) a0-0)
+                    (send-event
+                      proc
+                      'attack
+                      #f
+                      (static-attack-info :mask (vehicle-impulse-factor)
+                        ((id a0-0)
+                         (damage 2.0)
+                         (vehicle-damage-factor 0.0)
+                         (vehicle-impulse-factor 0.0)
+                         (mode 'jak-blue-shot)
+                         (penetrate-using (penetrate jak-blue-shot))
+                         (attacker (process->handle *target*))
+                         (attacker-velocity *zero-vector*)
+                         )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  0
+  (none)
+  )
+
+;; ============================================================
 ;; djak-zone-circle-check
-;; Called every frame from target-darkjak-process.
-;; Circle toggles the zone on/off.
-;; Directly freezes actors and manages ring visuals.
 ;; ============================================================
 (defun djak-zone-circle-check ()
   (when (and *djak-ability-mode* *target*)
@@ -61,18 +263,20 @@
               ((not *djak-zone-active*)
                (set! *djak-zone-active* #t)
                (set! *djak-zone-ring-timer* 0)
+               (set! *djak-zone-arc-timer* 0)
+               (set! *djak-zone-color-latch* (+ (current-time) (seconds 999)))
                (sound-play "gun-gravity")
                (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 150 (seconds 0.2))
                (format #t "[DJAK-ZONE] ON~%")
-               ;; Spawn initial rings immediately
-               (let ((center (new 'stack-no-clear 'vector)))
-                 (vector-copy! center (-> *target* control trans))
-                 (djak-zone-spawn-rings center)
-                 )
+               (vector-copy! *djak-zone-center* (-> *target* control trans))
+               (djak-zone-spawn-rings *djak-zone-center*)
+               (djak-zone-spawn-lightning-column *djak-zone-center* 122880.0)
                )
               (else
                (set! *djak-zone-active* #f)
                (set! *djak-zone-ring-timer* 0)
+               (set! *djak-zone-arc-timer* 0)
+               (set! *djak-zone-color-latch* (+ (current-time) (seconds 6)))
                (sound-play "gun-gravity")
                (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 100 (seconds 0.1))
                (format #t "[DJAK-ZONE] OFF~%")
@@ -83,50 +287,26 @@
         )
       )
     )
-  ;; Per-frame logic while active
   (when (and *djak-zone-active* *target*)
-    ;; Tick ring timer and re-spawn rings periodically
     (+! *djak-zone-ring-timer* 1)
+    (+! *djak-zone-arc-timer* 1)
     (when (>= *djak-zone-ring-timer* *djak-zone-ring-interval*)
       (set! *djak-zone-ring-timer* 0)
-      (let ((center (new 'stack-no-clear 'vector)))
-        (vector-copy! center (-> *target* control trans))
-        (djak-zone-spawn-rings center)
-        )
+      (djak-zone-spawn-rings *djak-zone-center*)
       )
-    ;; Search and freeze actors in radius
-    (let ((search-pos (new 'stack-no-clear 'vector)))
-      (vector-copy! search-pos (-> *target* control trans))
-      (+! (-> search-pos y) 4096.0)
-      (set! (-> search-pos w) 163840.0)
-      (let ((actors (new 'stack-no-clear 'array 'collide-shape 64)))
-        (countdown (i (fill-actor-list-for-box *actor-hash* search-pos actors 64))
-          (let ((cshape (-> actors i)))
-            (when (and cshape (-> cshape root-prim))
-              (let* ((proc (-> cshape process))
-                     (focusable (as-type proc process-focusable))
-                     )
-                (when (and proc
-                           focusable
-                           (logtest? (process-mask enemy guard civilian) (-> proc mask))
-                           (not (focus-test? focusable dead inactive disable))
-                           (nonzero? (-> focusable root))
-                           )
-                  (set! (-> focusable root transv x) 0.0)
-                  (set! (-> focusable root transv y) 0.0)
-                  (set! (-> focusable root transv z) 0.0)
-                  )
-                )
-              )
-            )
-          )
-        )
+    (when (zero? (mod *djak-zone-ring-timer* 20))
+      (djak-zone-spawn-lightning-column *djak-zone-center* 122880.0)
+      )
+    (when (>= *djak-zone-arc-timer* *djak-zone-arc-interval*)
+      (set! *djak-zone-arc-timer* 0)
+      (djak-zone-arc-to-entities *djak-zone-center*)
       )
     )
-  ;; Clear zone if ability mode turns off
   (when (and (not *djak-ability-mode*) *djak-zone-active*)
     (set! *djak-zone-active* #f)
     (set! *djak-zone-ring-timer* 0)
+    (set! *djak-zone-arc-timer* 0)
+    (set! *djak-zone-color-latch* (+ (current-time) (seconds 6)))
     )
   0
   (none)
