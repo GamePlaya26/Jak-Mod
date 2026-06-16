@@ -224,7 +224,7 @@
 
 (define-extern target-darkjak-giant (state target))
 (define-extern gdj-freight-train-check (function symbol :behavior target))
-
+(define-extern target-lightjak-giant (state target))
 (define-extern *djak-ability-mode* symbol)
 (define-extern *djak-shot-cooldown* int)
 (define-extern *djak-shot-cooldown-max* int)
@@ -538,6 +538,7 @@
     target-lightjak-freeze
     target-lightjak-get-off
     (target-lightjak-get-on lightjak-stage)
+    target-lightjak-giant       
     (target-lightjak-regen int)
     target-lightjak-shield
     (target-lightjak-swoop float)

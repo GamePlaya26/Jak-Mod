@@ -1293,8 +1293,12 @@
   )
 
 (defbehavior target-lightjak-process target ()
+  ;; MODIFIED: added (lightjak-stage ls8) check to prevent L2 from
+  ;; clearing get-off-lock while Giant Light Jak is active.
+  ;; Without this, holding L2 in GLJ would immediately revert to normal jak.
   (if (and (not (cpad-hold? (-> self control cpad number) l2))
            (not (and (-> self next-state) (= (-> self next-state name) 'target-powerjak-get-on)))
+           (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
            )
       (set! (-> self lightjak get-off-lock) #f)
       )
@@ -1334,6 +1338,8 @@
                                      (= v1-50 'target-lightjak-swoop-falling)
                                      (= v1-50 'target-lightjak-freeze)
                                      (= v1-50 'target-lightjak-regen)
+                                     ;; MODIFIED: don't force get-off while in GLJ transition
+                                     (= v1-50 'target-lightjak-giant)
                                      )
                                  )
                                )
@@ -1361,6 +1367,7 @@
     (else
       (set! (-> self lightjak-interp) 0.0)
       )
+      
     )
   (when (nonzero? (-> self lightjak shield-start-time))
     (set-time! (-> self fact shield-use-time))
@@ -1464,6 +1471,88 @@
       (set-time! (-> self fact shield-start-time))
       (go target-lightjak-shield)
       )
+    )
+  ;; Lightning crackle effect on Light Jak
+  (when (and (focus-test? self light)
+             (nonzero? (-> self lightjak))
+             (not (logtest? (-> self draw status) (draw-control-status no-draw no-draw-temp)))
+             (not (movie?))
+             )
+    (cond
+      ((!= (-> self invisible-interp) 0.0)
+       )
+      ((rand-vu-percent? 0.25)
+       (when (>= (- (-> *display* game-clock frame-counter) (-> self shock-effect-time)) (seconds 0.02))
+         (set! (-> self shock-effect-time) (-> *display* game-clock frame-counter))
+         (process-drawable-shock-wall-effect
+           self
+           (-> *lightning-spec-id-table* 9)
+           lightning-probe-callback
+           (-> *part-id-table* 187)
+           )
+         )
+       )
+      ((rand-vu-percent? 0.1)
+       (when (>= (- (-> *display* game-clock frame-counter) (-> self shock-effect-time)) (seconds 0.02))
+         (set! (-> self shock-effect-time) (-> *display* game-clock frame-counter))
+         (process-drawable-shock-effect
+           self
+           (-> *lightning-spec-id-table* 7)
+           lightning-probe-callback
+           (-> *part-id-table* 187)
+           0
+           0
+           40960.0
+           )
+         )
+       )
+      )
+    )
+  ;; ADDED: Giant Light Jak per-frame scale maintenance
+  ;; Light Jak has no native scale path (unlike Dark Jak which runs
+  ;; darkjak-giant-interp through target-darkjak-process each frame).
+  ;; While ls8 is set we apply the scale ourselves here every frame.
+  ;; Mirrors the exact formula from target-darkjak-process lines 967-976.
+  (when (logtest? (-> self lightjak stage) (lightjak-stage ls8))
+    (let ((f28-0 (* 1.05 (-> self darkjak-giant-interp)))
+          (f26-0 (* 0.20000002 (+ 5.0 (-> self darkjak-giant-interp))))
+          )
+      (set-vector! (-> self control scale) f28-0 f28-0 f28-0 1.0)
+      (let ((a3-0 (new 'stack-no-clear 'vector)))
+        (set! (-> a3-0 x) f26-0)
+        (set! (-> a3-0 y) 1.0)
+        (set! (-> a3-0 z) f26-0)
+        (set! (-> a3-0 w) 1.0)
+        (trs-set! (-> self upper-body) (the-as vector #f) (the-as quaternion #f) a3-0)
+        )
+      )
+    )
+  ;; ADDED: Giant Light Jak trigger
+  ;; L2 press while light jak + on ground = enter GLJ transformation
+  (when (and (focus-test? self light)
+             (nonzero? (-> self lightjak))
+             (cpad-pressed? (-> self control cpad number) l2)
+             (zero? (-> self lightjak latch-out-time))
+             (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
+             (logtest? (-> self control status) (collide-status on-surface))
+             (>= (-> self game eco-pill-light) 1.0)
+             (not (focus-test? self dead dangerous hit grabbed))
+             (not (and (-> self next-state)
+                       (let ((v1-0 (-> self next-state name)))
+                         (or (= v1-0 'target-lightjak-get-on)
+                             (= v1-0 'target-lightjak-get-off)
+                             (= v1-0 'target-lightjak-giant)
+                             (= v1-0 'target-lightjak-freeze)
+                             (= v1-0 'target-lightjak-regen)
+                             (= v1-0 'target-lightjak-swoop)
+                             (= v1-0 'target-lightjak-swoop-again)
+                             (= v1-0 'target-lightjak-swoop-falling)
+                             )
+                         )
+                       )
+                  )
+             )
+    (go target-lightjak-giant)
     )
   (target-lightjak-do-effect)
   0

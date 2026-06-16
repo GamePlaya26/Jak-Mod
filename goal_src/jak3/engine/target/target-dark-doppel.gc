@@ -1,61 +1,88 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-;; draw-beam is defined in gun-util.gc (GAME DGO) — forward-declare so the compiler
-;; can resolve it before gun-util.gc is processed in our compilation unit.
-(define-extern draw-beam (function sparticle-launcher vector vector symbol none))
-
 ;; name: target-dark-doppel.gc
 ;; Dark Jak Orbital Defense System.
 ;; 3 orbs orbit Jak at 5m radius, each autonomously firing orb-bolt projectiles
 ;; at the nearest enemy every 5 seconds (staggered, 360-degree targeting).
 ;; orb-bolt is a projectile subtype modeled after metalhead-shot:
-;;   - draw-beam laser trail from tail to head
 ;;   - glow head particle each frame
 ;;   - impact reuses group-metalhead-shot-hit (already dark purple)
 
 ;; ============================================================
-;; Orb visual parts
+;; Orb visual parts — unstable dark eco lightning orb
+;; Crackling animated lightning arcs around a tight hotdot core,
+;; with a flickering glow pulse that sells the instability.
 ;; ============================================================
 
-;; 5275 -- orb core glow (bright purple, barely moves)
+;; 5275 -- lightning arcs (lightning-anim-01: animated crackling arcs)
+;; birth-func-texture-group cycles through animation frames randomly
+;; giving the unstable flickering electric look
 (defpart 5275
-  :init-specs ((:texture (glow level-default-sprite))
-    (:num 1.0)
-    (:scale-x (meters 1.2) (meters 0.3))
-    (:rot-x (degrees 4.5))
+  :init-specs ((:texture (lightning-anim-01 level-default-sprite))
+    (:birth-func 'birth-func-texture-group)
+    (:num 3.0 2.0)
+    (:scale-x (meters 0.6) (meters 0.3))
     (:rot-z (degrees 0) (degrees 3600))
-    (:scale-y :copy scale-x)
-    (:r 160.0 40.0)
-    (:g 0.0)
+    (:scale-y (meters 0.6) (meters 0.3))
+    (:r 80.0 60.0)
+    (:g 0.0 20.0)
     (:b 255.0)
-    (:a 128.0 40.0)
-    (:omega (degrees 4515.75))
-    (:scalevel-x (meters -0.004))
+    (:a 200.0 55.0)
+    (:vel-x (meters -0.006) (meters 0.012))
+    (:vel-y (meters -0.004) (meters 0.008))
+    (:vel-z (meters -0.006) (meters 0.012))
+    (:scalevel-x (meters 0.003) (meters 0.002))
     (:scalevel-y :copy scalevel-x)
-    (:fade-a -1.6)
+    (:fade-a -3.0)
+    (:friction 0.88)
     (:timer (seconds 0.2))
-    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14 glow))
-    (:userdata 1024.0)
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    (:conerot-x (degrees 0) (degrees 3600))
+    (:conerot-y (degrees 0) (degrees 3600))
+    (:conerot-radius (meters 0.0) (meters 0.35))
     )
   )
 
-;; 5276 -- orb soft ambient (glow-soft, wider, lower alpha)
+;; 5276 -- dark eco core (glow-hotdot: tight intense nucleus)
+;; Short timer + high num = constant dense flickering core
 (defpart 5276
-  :init-specs ((:texture (glow-soft level-default-sprite))
-    (:num 1.0)
-    (:scale-x (meters 2.0))
-    (:rot-z (degrees 0) (degrees 360))
+  :init-specs ((:texture (glow-hotdot level-default-sprite))
+    (:num 2.0)
+    (:scale-x (meters 0.5) (meters 0.2))
+    (:rot-x (degrees 11.25))
+    (:rot-z (degrees 0) (degrees 3600))
     (:scale-y :copy scale-x)
-    (:r 80.0)
+    (:r 120.0 80.0)
+    (:g 0.0 30.0)
+    (:b 255.0)
+    (:a 255.0 55.0)
+    (:timer (seconds 0.017))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 glow))
+    (:userdata 4096.0)
+    )
+  )
+
+;; 5277 -- unstable pulse (glow: randomized alpha for flickering instability)
+;; Large random alpha range makes it visibly flicker each frame
+(defpart 5277
+  :init-specs ((:texture (glow level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 0.8) (meters 0.5))
+    (:rot-x (degrees 4.5))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 60.0 40.0)
     (:g 0.0)
-    (:b 180.0)
-    (:a 48.0)
-    (:scalevel-x (meters -0.05))
+    (:b 200.0 55.0)
+    (:a 40.0 120.0)
+    (:omega (degrees 4515.75))
+    (:scalevel-x (meters -0.008))
     (:scalevel-y :copy scalevel-x)
-    (:fade-a -1.2)
-    (:timer (seconds 0.135))
-    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))
+    (:fade-a -2.0)
+    (:timer (seconds 0.15))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14 glow))
+    (:userdata 1024.0)
     )
   )
 
@@ -63,94 +90,176 @@
 ;; orb-bolt projectile parts
 ;; ============================================================
 
-;; 5277 -- bolt beam body (gun-enemy-beam recolored dark purple)
-;; Used with draw-beam — birth-func-set-quat orients it along travel direction
-(defpart 5277
-  :init-specs ((:texture (gun-enemy-beam level-default-sprite))
-    (:birth-func 'birth-func-set-quat)
-    (:num 1.0)
-    (:scale-x (meters 0.2))
-    (:scale-y (meters 8))
-    (:r 60.0)
-    (:g 0.0)
-    (:b 200.0)
-    (:a 64.0 64.0)
-    (:timer (seconds 0.017))
-    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-14 left-multiply-quat))
-    )
-  )
-
-;; 5278 -- bolt head glow (bright purple-white core at leading edge)
+;; 5278 -- void core (glow-hotdot: intense white-violet nucleus)
+;; Denser: num 3, larger scale, longer timer so more overlap each frame
 (defpart 5278
-  :init-specs ((:texture (glow level-default-sprite))
-    (:num 1.0)
-    (:scale-x (meters 1.5))
-    (:rot-x (degrees 4.5))
+  :init-specs ((:texture (glow-hotdot level-default-sprite))
+    (:num 3.0)
+    (:scale-x (meters 1.0) (meters 0.4))
+    (:rot-x (degrees 11.25))
     (:rot-z (degrees 0) (degrees 3600))
     (:scale-y :copy scale-x)
-    (:r 180.0)
-    (:g 0.0 64.0)
+    (:r 200.0 55.0)
+    (:g 0.0 40.0)
     (:b 255.0)
-    (:a 220.0)
-    (:omega (degrees 4515.75))
-    (:scalevel-x (meters 0.08))
-    (:scalevel-y :copy scalevel-x)
-    (:fade-a -5.5)
-    (:timer (seconds 0.135))
-    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14 glow))
-    (:userdata 1024.0)
+    (:a 255.0)
+    (:timer (seconds 0.05))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 glow))
+    (:userdata 4096.0)
     )
   )
 
-;; 5279 -- bolt soft glow halo (glow-soft around the head)
+;; 5279 -- lightning tendrils (denser: more arcs, wider spread, longer lived)
 (defpart 5279
-  :init-specs ((:texture (glow-soft level-default-sprite))
-    (:num 1.0)
-    (:scale-x (meters 2.5))
-    (:rot-z (degrees 0) (degrees 360))
-    (:scale-y :copy scale-x)
-    (:r 80.0)
+  :init-specs ((:texture (lightning-anim-01 level-default-sprite))
+    (:birth-func 'birth-func-texture-group)
+    (:num 8.0 4.0)
+    (:scale-x (meters 0.25) (meters 0.15))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y (meters 0.7) (meters 0.4))
+    (:r 120.0 80.0)
     (:g 0.0)
-    (:b 180.0)
-    (:a 56.0)
-    (:scalevel-x (meters -0.06))
+    (:b 255.0)
+    (:a 220.0 60.0)
+    (:vel-x (meters -0.025) (meters 0.05))
+    (:vel-y (meters -0.025) (meters 0.05))
+    (:vel-z (meters -0.025) (meters 0.05))
+    (:scalevel-x (meters 0.003) (meters 0.002))
     (:scalevel-y :copy scalevel-x)
-    (:fade-a -1.4)
-    (:timer (seconds 0.135))
-    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 sp-cpuinfo-flag-14))
+    (:fade-a -2.5)
+    (:friction 0.93)
+    (:timer (seconds 0.3))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    (:conerot-x (degrees 0) (degrees 3600))
+    (:conerot-y (degrees 0) (degrees 3600))
+    (:conerot-radius (meters 0.05) (meters 0.3))
+    )
+  )
+
+;; 5280 -- dark smoke wake (unchanged)
+(defpart 5280
+  :init-specs ((:texture (bigpuff level-default-sprite))
+    (:num 1.0)
+    (:scale-x (meters 0.5) (meters 0.3))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 20.0 15.0)
+    (:g 0.0)
+    (:b 60.0 40.0)
+    (:a 80.0 40.0)
+    (:scalevel-x (meters 0.01) (meters 0.005))
+    (:rotvel-z (degrees -0.5) (degrees 1.0))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -0.4)
+    (:friction 0.85)
+    (:timer (seconds 1.0))
+    (:flags (sp-cpuinfo-flag-2))
+    (:conerot-x (degrees 0) (degrees 3600))
+    (:conerot-y (degrees 0) (degrees 3600))
+    (:conerot-radius (meters 0.1) (meters 0.15))
+    )
+  )
+
+;; 5281 -- void aura (explosion-nebula: denser, more overlap)
+(defpart 5281
+  :init-specs ((:texture (explosion-nebula level-default-sprite))
+    (:num 2.0)
+    (:scale-x (meters 1.4) (meters 0.4))
+    (:rot-x (degrees 1.125))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 80.0 40.0)
+    (:g 0.0)
+    (:b 160.0 60.0)
+    (:a 70.0 30.0)
+    (:scalevel-x (meters 0.04))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -1.8)
+    (:timer (seconds 0.2))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3 glow))
+    (:userdata 2048.0)
+    )
+  )
+
+;; 5282 -- impact void ring (water-radiate: expanding dark shockwave on hit)
+(defpart 5282
+  :init-specs ((:texture (water-radiate level-default-sprite))
+    (:num 3.0)
+    (:scale-x (meters 1.0) (meters 0.5))
+    (:rot-x 4)
+    (:scale-y :copy scale-x)
+    (:r 40.0 20.0)
+    (:g 0.0)
+    (:b 180.0 60.0)
+    (:a 200.0 55.0)
+    (:scalevel-x (meters 0.12) (meters 0.04))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -2.8)
+    (:timer (seconds 0.5))
+    (:flags (sp-cpuinfo-flag-2 sp-cpuinfo-flag-3))
+    (:func sparticle-track-hadouken)
+    )
+  )
+
+;; 5283 -- impact dark nebula burst (explosion-nebula: void cloud on hit)
+(defpart 5283
+  :init-specs ((:texture (explosion-nebula level-default-sprite))
+    (:num 6.0 4.0)
+    (:scale-x (meters 0.8) (meters 0.6))
+    (:rot-z (degrees 0) (degrees 3600))
+    (:scale-y :copy scale-x)
+    (:r 60.0 40.0)
+    (:g 0.0)
+    (:b 180.0 80.0)
+    (:a 80.0 60.0)
+    (:vel-y (meters 0.02) (meters 0.04))
+    (:scalevel-x (meters 0.015) (meters 0.01))
+    (:rotvel-z (degrees -1.0) (degrees 2.0))
+    (:scalevel-y :copy scalevel-x)
+    (:fade-a -0.8)
+    (:accel-y (meters -0.0002))
+    (:friction 0.9)
+    (:timer (seconds 0.7))
+    (:flags (sp-cpuinfo-flag-2))
+    (:conerot-x (degrees 0) (degrees 3600))
+    (:conerot-y (degrees 0) (degrees 3600))
     )
   )
 
 ;; ============================================================
 ;; orb-bolt projectile type
-;; Mirrors metalhead-shot structure: tail-pos tracks the spawn point
-;; so draw-beam can render the beam from origin to current head position.
 ;; ============================================================
 (deftype orb-bolt (projectile)
-  ((tail-pos   vector    :inline)
-   (fire-pos   vector    :inline)
-   (fire-sound sound-id)
+  ((tail-pos    vector    :inline)
+   (fire-pos    vector    :inline)
+   (fire-sound  sound-id)
+   (home-handle handle)
    )
   )
 
-;; ============================================================
-;; orb-bolt-move
-;; Straight-line movement + collision check → impact state
-;; Identical structure to metalhead-shot-move.
-;; ============================================================
 (defmethod deactivate ((this orb-bolt))
   (sound-stop (-> this fire-sound))
   (call-parent-method this)
   (none)
   )
 
-;; ============================================================
-;; orb-bolt-move — straight-line movement, no collision system
-;; ============================================================
 (defun orb-bolt-move ((arg0 orb-bolt))
   (set! (-> arg0 root status) (collide-status))
   (vector+! (-> arg0 root trans) (-> arg0 root trans) (-> arg0 root transv))
+  ;; Spin ~6 degrees/frame around Y axis
+  (quaternion-rotate-y! (-> arg0 root quat) (-> arg0 root quat) 1092.2667)
   (update-transforms (-> arg0 root))
+  (let ((home-proc (handle->process (-> arg0 home-handle))))
+    (when (and home-proc (nonzero? (-> (the-as process-focusable home-proc) root)))
+      (let ((dist (vector-vector-distance
+                    (-> arg0 root trans)
+                    (-> (the-as process-focusable home-proc) root trans))))
+        (when (< dist 4096.0)
+          (go (method-of-object arg0 impact))
+          )
+        )
+      )
+    )
   0
   (none)
   )
@@ -170,33 +279,93 @@
     )
   )
 
-;; ============================================================
-;; projectile-method-24  (muzzle flash — called once on spawn)
-;; ============================================================
 (defmethod projectile-method-24 ((this orb-bolt))
+  (set! (-> *launch-matrix* trans quad) (-> this root trans quad))
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5275)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
   0
   (none)
   )
 
-;; ============================================================
-;; projectile-method-25  (trail particles — called every frame)
-;; ============================================================
 (defmethod projectile-method-25 ((this orb-bolt))
+  (let ((head-pos (-> this root trans)))
+    (set! (-> *launch-matrix* trans quad) (-> head-pos quad))
+    (sp-launch-particles-var
+      *sp-particle-system-2d*
+      (-> *part-id-table* 5278)
+      *launch-matrix*
+      (the-as sparticle-launch-state #f)
+      (the-as sparticle-launch-control #f)
+      1.0)
+    (sp-launch-particles-var
+      *sp-particle-system-2d*
+      (-> *part-id-table* 5279)
+      *launch-matrix*
+      (the-as sparticle-launch-state #f)
+      (the-as sparticle-launch-control #f)
+      1.0)
+    (sp-launch-particles-var
+      *sp-particle-system-2d*
+      (-> *part-id-table* 5280)
+      *launch-matrix*
+      (the-as sparticle-launch-state #f)
+      (the-as sparticle-launch-control #f)
+      1.0)
+    (sp-launch-particles-var
+      *sp-particle-system-2d*
+      (-> *part-id-table* 5281)
+      *launch-matrix*
+      (the-as sparticle-launch-state #f)
+      (the-as sparticle-launch-control #f)
+      1.0)
+    )
   0
   (none)
   )
 
-;; ============================================================
-;; projectile-method-26  (impact visuals)
-;; ============================================================
 (defmethod projectile-method-26 ((this orb-bolt))
+  (set! (-> *launch-matrix* trans quad) (-> this root trans quad))
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5282)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5283)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
+  (activate! *camera-smush-control* 409.6 6 30 1.0 0.95 (-> *display* camera-clock))
+  (let ((home-proc (handle->process (-> this home-handle))))
+    (when home-proc
+      (let ((attack (new 'stack 'attack-info)))
+        (set! (-> attack mode) 'dark-smack)
+        (set! (-> attack id) (-> this attack-id))
+        (set! (-> attack mask) (attack-mask mode id))
+        (set! (-> attack penetrate-using) (penetrate dark-smack dark-skin dark-bomb))
+        (set! (-> attack damage) 6.0)
+        (set! (-> attack vehicle-damage-factor) 1.0)
+        (set! (-> attack vehicle-impulse-factor) 2.0)
+        (logior! (-> attack mask) (attack-mask damage vehicle-damage-factor vehicle-impulse-factor))
+        (set! (-> attack attacker) (-> this owner-handle))
+        (logior! (-> attack mask) (attack-mask attacker))
+        (send-event home-proc 'attack #f attack)
+        )
+      )
+    )
   0
   (none)
   )
 
-;; ============================================================
-;; setup-collision!  (thin sphere, hits enemies + background)
-;; ============================================================
 (defmethod setup-collision! ((this orb-bolt))
   (let ((s5-0 (new 'process 'collide-shape-moving this (collide-list-enum hit-by-player))))
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
@@ -228,15 +397,12 @@
   (none)
   )
 
-;; ============================================================
-;; init-proj-settings!
-;; ============================================================
 (defmethod init-proj-settings! ((this orb-bolt))
   (vector-copy! (-> this tail-pos) (-> this root trans))
   (set! (-> this attack-mode)            'dark-smack)
-  (set! (-> this max-speed)              532480.0)
+  (set! (-> this max-speed)              2048.0)
   (set! (-> this move) orb-bolt-move)
-  (set! (-> this timeout)                (seconds 1.5))
+  (set! (-> this timeout)                (seconds 20.0))
   (set! (-> this damage)                 6.0)
   (set! (-> this vehicle-damage-factor)  1.0)
   (set! (-> this vehicle-impulse-factor) 2.0)
@@ -289,9 +455,6 @@
 (defun doppel-stamp-blink ((target handle)) (none))
 (defun doppel-stamp-zone-toggle () (none))
 
-;; ============================================================
-;; doppel-deactivate
-;; ============================================================
 (defun doppel-deactivate ()
   (when *doppel-active*
     (set! *doppel-active* #f)
@@ -300,9 +463,6 @@
   (none)
   )
 
-;; ============================================================
-;; doppel-get-orb-pos
-;; ============================================================
 (defun doppel-get-orb-pos ((out vector) (angle float))
   (let ((jak-pos (-> *target* control trans)))
     (set! (-> out x) (+ (-> jak-pos x) (* *doppel-orb-radius* (sin angle))))
@@ -313,10 +473,6 @@
   (none)
   )
 
-;; ============================================================
-;; doppel-find-nearest-enemy
-;; 360-degree search, no camera-facing filter.
-;; ============================================================
 (defun doppel-find-nearest-enemy ((from-pos vector))
   (let* ((result     (the-as handle 0))
          (sphere     (new 'stack-no-clear 'vector))
@@ -352,15 +508,9 @@
     )
   )
 
-;; ============================================================
-;; doppel-fire-orb
-;; Spawns an orb-bolt from orb-pos toward a pre-found target handle.
-;; Takes the handle directly to avoid a second fill-actor-list-for-box call.
-;; ============================================================
 (define-extern doppel-fire-orb (function vector handle none))
 (defun doppel-fire-orb ((orb-pos vector) (target-handle handle))
   (let ((home-proc (handle->process target-handle)))
-    (format #t "[FIRE] home-proc=~A~%" (nonzero? home-proc))
     (when (and home-proc (nonzero? (-> (the-as process-focusable home-proc) root)))
       (let ((gp-0 (new 'stack-no-clear 'projectile-init-by-other-params)))
         (set! (-> gp-0 ent)             (-> *target* entity))
@@ -378,19 +528,19 @@
           (set! (-> v1-0 attack-id) a0-0)
           (set! (-> gp-0 attack-id) a0-0)
           )
-        (set! (-> gp-0 timeout) (seconds 1.5))
+        (set! (-> gp-0 timeout) (seconds 20.0))
         (vector-copy! (-> gp-0 pos) orb-pos)
         (let ((to-target (new 'stack-no-clear 'vector)))
           (vector-! to-target (-> (the-as process-focusable home-proc) root trans) orb-pos)
           (+! (-> to-target y) 4096.0)
-          (vector-normalize-copy! (-> gp-0 vel) to-target 532480.0)
+          (vector-normalize-copy! (-> gp-0 vel) to-target 2048.0)
           )
         (vector-copy! (-> *launch-matrix* trans) orb-pos)
         (let ((s3-0 (get-process *default-dead-pool* orb-bolt #x8000 1)))
-          (format #t "[FIRE] get-process ok=~A~%" (nonzero? s3-0))
           (when s3-0
             (activate s3-0 *target* "orb-bolt" (the-as pointer #x70004000))
             (run-now-in-process s3-0 projectile-init-by-other gp-0)
+            (set! (-> (the-as orb-bolt (-> s3-0 self)) home-handle) target-handle)
             )
           )
         )
@@ -399,9 +549,6 @@
   (none)
   )
 
-;; ============================================================
-;; doppel-spawn-orb-particles
-;; ============================================================
 (defun doppel-spawn-orb-particles ((orb-pos vector))
   (set! (-> *launch-matrix* trans quad) (-> orb-pos quad))
   (sp-launch-particles-var
@@ -418,12 +565,16 @@
     (the-as sparticle-launch-state #f)
     (the-as sparticle-launch-control #f)
     1.0)
+  (sp-launch-particles-var
+    *sp-particle-system-2d*
+    (-> *part-id-table* 5277)
+    *launch-matrix*
+    (the-as sparticle-launch-state #f)
+    (the-as sparticle-launch-control #f)
+    1.0)
   (none)
   )
 
-;; ============================================================
-;; doppel-record-frame  — advance orbit angles each frame
-;; ============================================================
 (defun doppel-record-frame ()
   (when *doppel-active*
     (set! *doppel-orb-angle-0* (the float (mod (the int (+ *doppel-orb-angle-0* *doppel-orb-speed*)) 65536)))
@@ -433,9 +584,6 @@
   (none)
   )
 
-;; ============================================================
-;; doppel-update-visual  — orb visuals + fire logic each frame
-;; ============================================================
 (defun doppel-update-visual ()
   (when *doppel-active*
     (let ((orb0 (new 'stack-no-clear 'vector))
@@ -448,7 +596,6 @@
       (doppel-spawn-orb-particles orb0)
       (doppel-spawn-orb-particles orb1)
       (doppel-spawn-orb-particles orb2)
-      ;; Fire timers
       (cond
         ((<= *doppel-fire-timer-0* 0)
          (let ((tgt (doppel-find-nearest-enemy orb0)))
@@ -487,16 +634,10 @@
   (none)
   )
 
-;; ============================================================
-;; doppel-timer-update  — retained for extern compat
-;; ============================================================
 (defun doppel-timer-update ()
   (none)
   )
 
-;; ============================================================
-;; doppel-activate
-;; ============================================================
 (defun doppel-activate ()
   (cond
     (*doppel-active*
@@ -516,9 +657,6 @@
   (none)
   )
 
-;; ============================================================
-;; djak-modifier-check-input
-;; ============================================================
 (defun djak-modifier-check-input ()
   (when (and (cpad-hold? (-> *target* control cpad number) l1)
              (cpad-pressed? (-> *target* control cpad number) x))

@@ -345,6 +345,7 @@
   "target-eco-particles.o"
   "target-eco-system.o"
   "target-lightjak.o"
+  "target-lightjak-giant.o"
   "target-invisible.o"
   "target-launch.o"
   "target-death.o"
