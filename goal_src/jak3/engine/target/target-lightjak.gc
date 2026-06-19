@@ -1099,6 +1099,29 @@
         ;; og:preserve-this trigger effects
         (when (pc-get-trigger-effects-enabled?)
           (pc-clear-trigger-effect! (pc-trigger-effect-option left)))
+         
+         
+        ;; ADDED: Clear Giant Light Jak state on full light jak exit
+        (when (logtest? (-> self lightjak stage) (lightjak-stage ls8))
+          (logclear! (-> self lightjak stage) (lightjak-stage ls8))
+          (set! (-> self lightjak want-stage) (-> self lightjak stage))
+          ;; Restore GLJ stat boosts
+          (set! (-> *TARGET-bank* dark-jump-height-min) (meters 3.0))
+          (set! (-> *TARGET-bank* dark-jump-height-max) (meters 3.0))
+          (set! (-> *TARGET-bank* double-jump-height-min) (meters 1.0))
+          (set! (-> *TARGET-bank* double-jump-height-max) (meters 2.5))
+          (set! (-> *lightjak-trans-mods* transv-max) (meters 8.0))
+          (set! (-> *lightjak-trans-mods* target-speed) (meters 8.0))
+          ;; Restore walk/jump mods speed (were overridden for GLJ movement boost)
+          (set! (-> *walk-mods* transv-max) (meters 8.0))
+          (set! (-> *walk-mods* target-speed) (meters 8.0))
+          (set! (-> *jump-mods* transv-max) (meters 20.0))
+          (set! (-> *jump-mods* target-speed) (meters 20.0))
+          (set! (-> *double-jump-mods* transv-max) (meters 8.0))
+          (set! (-> *double-jump-mods* target-speed) (meters 8.0))
+          ;; Restore collision sphere
+          (set! (-> self control root-prim local-sphere w) (meters 2.9))
+          )
         0
         )
       ((zero? (-> self lightjak latch-out-time))
@@ -1292,6 +1315,11 @@
   (none)
   )
 
+
+
+
+
+
 (defbehavior target-lightjak-process target ()
   ;; MODIFIED: added (lightjak-stage ls8) check to prevent L2 from
   ;; clearing get-off-lock while Giant Light Jak is active.
@@ -1321,7 +1349,9 @@
        )
      (target-danger-set! (-> self control danger-mode) #f)
      (update-transforms (-> self control))
-     (when (and (or (< (-> self game eco-pill-light) 1.0)
+     ;; MODIFIED: ls8 (GLJ) bypasses eco drain forced exit — GLJ has no drain
+     (when (and (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
+                (or (< (-> self game eco-pill-light) 1.0)
                     (not (-> *setting-control* user-current lightjak))
                     (not (logtest? (the-as game-feature (logand (game-feature lightjak) (-> *setting-control* user-current features)))
                                    (-> self game features)
@@ -1509,14 +1539,31 @@
       )
     )
   ;; ADDED: Giant Light Jak per-frame scale maintenance
-  ;; Light Jak has no native scale path (unlike Dark Jak which runs
-  ;; darkjak-giant-interp through target-darkjak-process each frame).
-  ;; While ls8 is set we apply the scale ourselves here every frame.
-  ;; Mirrors the exact formula from target-darkjak-process lines 967-976.
+  ;; Light Jak has no native scale path so we apply it ourselves each frame.
+  ;; lightjak-interp is 1.0 when fully transformed, 0.0 when not.
+  ;; lerp-scale blends from normal size (1.0) to giant size as interp rises.
+  ;; Target values are tunable: 2.1 = full uniform scale, 1.4 = upper-body width.
   (when (logtest? (-> self lightjak stage) (lightjak-stage ls8))
-    (let ((f28-0 (* 1.05 (-> self darkjak-giant-interp)))
-          (f26-0 (* 0.20000002 (+ 5.0 (-> self darkjak-giant-interp))))
-          )
+    ;; Reapply stat boosts every frame — darkjak-process and state transitions
+    ;; reset *TARGET-bank* jump heights and mod-surface each frame
+    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 24.0))
+    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 24.0))
+    (set! (-> *TARGET-bank* double-jump-height-min) (meters 8.0))
+    (set! (-> *TARGET-bank* double-jump-height-max) (meters 8.0))
+    ;; target-stance uses *walk-mods* not *lightjak-trans-mods* so we
+    ;; must override walk-mods directly to get speed boost in normal movement.
+    ;; Jump states use *jump-mods* and *double-jump-mods* so override those
+    ;; too so speed carries through jumps.
+    (set! (-> *walk-mods* transv-max) (meters 30.0))
+    (set! (-> *walk-mods* target-speed) (meters 30.0))
+    (set! (-> *jump-mods* transv-max) (meters 30.0))
+    (set! (-> *jump-mods* target-speed) (meters 30.0))
+    (set! (-> *double-jump-mods* transv-max) (meters 30.0))
+    (set! (-> *double-jump-mods* target-speed) (meters 30.0))
+    (let* ((f30-0 (-> self lightjak-interp))
+           (f28-0 (lerp-scale 1.0 2.1 f30-0 0.0 1.0))
+           (f26-0 (lerp-scale 1.0 1.4 f30-0 0.0 1.0))
+           )
       (set-vector! (-> self control scale) f28-0 f28-0 f28-0 1.0)
       (let ((a3-0 (new 'stack-no-clear 'vector)))
         (set! (-> a3-0 x) f26-0)
@@ -1558,6 +1605,8 @@
   0
   (none)
   )
+
+
 
 (defstate target-lightjak-get-on (target)
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))

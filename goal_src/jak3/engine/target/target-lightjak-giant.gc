@@ -22,9 +22,8 @@
 ;; Triggered by pressing L2 while already in Light Jak form
 ;; and standing on the ground.
 ;;
-;; L2 while in GLJ does NOT revert to normal jak — that
-;; suppression is handled in target-lightjak-process by
-;; checking (lightjak-stage ls8) before clearing get-off-lock.
+;; L2 while in GLJ does NOT revert to normal jak — suppression
+;; is handled in target-lightjak-process via (lightjak-stage ls8).
 ;;
 ;; Uses lightjak-stage ls8 as the "giant" flag bit.
 ;; (vanilla ls8 is unused placeholder — safe to repurpose)
@@ -35,19 +34,20 @@
 ;;   jakb-lightjak-get-on-out-ja    (exit column)
 ;;   jakb-lightjak-get-on-land-ja   (land)
 ;;
-;; Scale is driven by darkjak-giant-interp (shared with Dark Giant,
-;; safe since the two forms are mutually exclusive).
 ;; Scale is applied per-frame in target-lightjak-process while
-;; ls8 is set — Light Jak has no native scale path, so we must
-;; maintain it ourselves each frame.
-;; unknown-word04 stores the pre-entry interp value for restore.
+;; ls8 is set using lightjak-interp as the blend factor.
+;;
+;; IMPORTANT: ls8 is NOT cleared in :exit — it persists after
+;; transitioning to target-stance so the per-frame scale block
+;; keeps running. ls8 + stat boosts are cleared in
+;; target-lightjak-end-mode when the player fully exits light jak.
 ;;
 ;; Stat boosts (Phase 1 — tune values as needed):
-;;   jump height:        18m  (vanilla dark jak giant: 24m)
-;;   double jump height:  6m  (vanilla: 8m)
+;;   jump height:        18m
+;;   double jump height:  6m
 ;;   run/transv-max:     13m/s
 ;;   collision sphere:    4.5m radius
-;;   scale:               2.0x via darkjak-giant-interp
+;;   scale:              ~2.1x via lightjak-interp lerp
 ;;
 ;; Phase 2+ (future): divine abilities
 ;; ============================================================
@@ -55,45 +55,23 @@
 (defstate target-lightjak-giant (target)
   :event target-standard-event-handler
   :exit (behavior ()
-    ;; Restore jump/speed to vanilla light jak defaults
-    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 3.0))
-    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 3.0))
-    (set! (-> *TARGET-bank* double-jump-height-min) (meters 1.0))
-    (set! (-> *TARGET-bank* double-jump-height-max) (meters 2.5))
-    (set! (-> *lightjak-trans-mods* transv-max) (meters 8.0))
-    (set! (-> *lightjak-trans-mods* target-speed) (meters 8.0))
-    ;; Restore gravity
+    ;; Restore gravity (was zeroed during float phase)
     (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))
     (set! (-> self control dynam gravity-length) (-> self control standard-dynamics gravity-length))
-    ;; Restore collision sphere
-    (set! (-> self control root-prim local-sphere w) (meters 2.9))
-    ;; Restore scale explicitly — per-frame scale in target-lightjak-process
-    ;; stops running once ls8 is cleared, but we reset here to be safe
-    (set-vector! (-> self control scale) 1.0 1.0 1.0 1.0)
-    (trs-set! (-> self upper-body)
-              (the-as vector #f)
-              (the-as quaternion #f)
-              (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)
-              )
-    ;; Restore darkjak-giant-interp from saved value
-    (set! (-> self darkjak-giant-interp) (the-as float (-> self control unknown-word04)))
-    ;; Clear flags
+    ;; Clear transition flags only.
+    ;; ls8 intentionally NOT cleared here — must persist after transitioning
+    ;; to target-stance so per-frame scale block keeps running.
+    ;; ls8 + stat boosts are cleared in target-lightjak-end-mode on full exit.
     (logclear! (-> self target-flags) (target-flags lleg-still rleg-still tf4))
-    ;; Clear giant bit (ls8) from lightjak stage
-    (logclear! (-> self lightjak stage) (lightjak-stage ls8))
-    (set! (-> self lightjak want-stage) (-> self lightjak stage))
     )
   :code (behavior ()
-    ;; Save pre-entry interp for clean restore on exit
-    (set! (-> self control unknown-word04)
-          (the-as uint (-> self darkjak-giant-interp)))
     ;; Apply stat boosts
-    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 18.0))
-    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 18.0))
+    (set! (-> *TARGET-bank* dark-jump-height-min) (meters 24.0))
+    (set! (-> *TARGET-bank* dark-jump-height-max) (meters 24.0))
     (set! (-> *TARGET-bank* double-jump-height-min) (meters 6.0))
     (set! (-> *TARGET-bank* double-jump-height-max) (meters 6.0))
-    (set! (-> *lightjak-trans-mods* transv-max) (meters 13.0))
-    (set! (-> *lightjak-trans-mods* target-speed) (meters 13.0))
+    (set! (-> *lightjak-trans-mods* transv-max) (meters 30.0))
+    (set! (-> *lightjak-trans-mods* target-speed) (meters 30.0))
     ;; Set giant bit (ls8)
     (logior! (-> self lightjak stage) (lightjak-stage ls8))
     (set! (-> self lightjak want-stage) (-> self lightjak stage))
@@ -113,10 +91,9 @@
       (ja :num! (seek!))
       )
     ;; --------------------------------------------------------
-    ;; Phase 2: float + light column + scale lerp
-    ;; darkjak-giant-interp is lerped 1.0->2.0 here during the hold.
-    ;; The per-frame scale block in target-lightjak-process reads it
-    ;; each frame and applies it to control scale + upper-body trs.
+    ;; Phase 2: float + light column
+    ;; Per-frame scale in target-lightjak-process reads lightjak-interp
+    ;; each frame and applies it while ls8 is set.
     ;; --------------------------------------------------------
     (set! (-> self control dynam gravity-max) 0.0)
     (set! (-> self control dynam gravity-length) 0.0)
@@ -154,15 +131,6 @@
           (set! (-> *part-id-table* 633 init-specs 9 initial-valuef)
                 (* 1.1 (- (-> v1-0 y) (-> self control trans y))))
           )
-        ;; Lerp darkjak-giant-interp 1.0 -> 2.0 over hold duration
-        ;; Scale is picked up and applied by target-lightjak-process each frame
-        (set! (-> self darkjak-giant-interp)
-              (lerp-scale 1.0 2.0
-                          (the float hold-timer)
-                          0.0
-                          (the float hold-duration)
-                          )
-              )
         ;; Hold loop animation
         (let ((v1-1 (ja-group)))
           (when (not (and v1-1 (= v1-1 jakb-lightjak-get-on-loop-ja)))

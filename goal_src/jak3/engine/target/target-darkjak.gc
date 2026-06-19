@@ -773,6 +773,7 @@
   (none)
   )
 
+
 (defbehavior target-darkjak-process target ()
   (local-vars (a3-3 vector))
 (cond
@@ -944,10 +945,13 @@
       (if (= (-> self darkjak-interp) 0.0)
           (set! (-> self darkjak-giant-interp) 1.0)
           )
-            (set! (-> *TARGET-bank* dark-jump-height-min) (meters 20.5))
-      (set! (-> *TARGET-bank* dark-jump-height-max) (meters 20.5))
-      (set! (-> *TARGET-bank* double-jump-height-min) (meters 1.0))
-      (set! (-> *TARGET-bank* double-jump-height-max) (meters 2.5))
+      ;; MODIFIED: skip jump height reset when GLJ is active
+      (when (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
+        (set! (-> *TARGET-bank* dark-jump-height-min) (meters 20.5))
+        (set! (-> *TARGET-bank* dark-jump-height-max) (meters 20.5))
+        (set! (-> *TARGET-bank* double-jump-height-min) (meters 1.0))
+        (set! (-> *TARGET-bank* double-jump-height-max) (meters 2.5))
+        )
     
       (set! (-> *darkjak-trans-mods* seek0) (-> *walk-mods* seek0))
       (set! (-> *darkjak-trans-mods* seek90) (-> *walk-mods* seek90))
@@ -967,14 +971,21 @@
     (let ((f28-0 (lerp-scale 1.0 (* 1.05 (-> self darkjak-giant-interp)) f30-0 0.0 1.0))
           (f26-0 (lerp-scale 1.0 (* 0.20000002 (+ 5.0 (-> self darkjak-giant-interp))) f30-0 0.0 1.0))
           )
-      (set-vector! (-> self control scale) f28-0 f28-0 f28-0 1.0)
-      (let ((a3-2 (new 'stack-no-clear 'vector)))
-        (set! (-> a3-2 x) f26-0)
-        (set! (-> a3-2 y) 1.0)
-        (set! (-> a3-2 z) f26-0)
-        (set! (-> a3-2 w) 1.0)
-        (trs-set! (-> self upper-body) (the-as vector #f) (the-as quaternion #f) a3-2)
+      ;; MODIFIED: skip control scale + upper-body write when Giant Light Jak is active.
+      ;; GLJ manages these independently via target-lightjak-process each frame.
+      ;; Without this guard, darkjak-process resets scale to 1.0 every frame
+      ;; (since darkjak-interp=0.0 in light jak form, lerp-scale returns 1.0).
+      (when (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
+        (set-vector! (-> self control scale) f28-0 f28-0 f28-0 1.0)
+        (let ((a3-2 (new 'stack-no-clear 'vector)))
+          (set! (-> a3-2 x) f26-0)
+          (set! (-> a3-2 y) 1.0)
+          (set! (-> a3-2 z) f26-0)
+          (set! (-> a3-2 w) 1.0)
+          (trs-set! (-> self upper-body) (the-as vector #f) (the-as quaternion #f) a3-2)
+          )
         )
+      ;; f0-15 / a3-3 (neck correction) always runs — needed for neck/horns below
       (let ((f0-15 (* 1.1 f26-0)))
         (cond
           ((= (-> self ext-geo) (target-geo jakb))
