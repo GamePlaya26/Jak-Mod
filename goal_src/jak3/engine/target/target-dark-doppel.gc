@@ -251,21 +251,30 @@
 
 (defun orb-bolt-move ((arg0 orb-bolt))
   (set! (-> arg0 root status) (collide-status))
-  (vector+! (-> arg0 root trans) (-> arg0 root trans) (-> arg0 root transv))
-  ;; Spin ~6 degrees/frame around Y axis
-  (quaternion-rotate-y! (-> arg0 root quat) (-> arg0 root quat) 1092.2667)
-  (update-transforms (-> arg0 root))
+  ;; Homing: steer transv toward target's current position each frame
   (let ((home-proc (handle->process (-> arg0 home-handle))))
     (when (and home-proc (nonzero? (-> (the-as process-focusable home-proc) root)))
-      (let ((dist (vector-vector-distance
-                    (-> arg0 root trans)
-                    (-> (the-as process-focusable home-proc) root trans))))
+      (let* ((to-target  (vector-! (new 'stack-no-clear 'vector)
+                                   (-> (the-as process-focusable home-proc) root trans)
+                                   (-> arg0 root trans)))
+             (dist       (vector-length to-target))
+             )
         (when (< dist 4096.0)
           (go (method-of-object arg0 impact))
+          )
+        ;; Normalize desired direction, lerp transv toward it, renormalize at speed
+        (vector-normalize! to-target 1.0)
+        (let ((cur-dir (vector-normalize-copy! (new 'stack-no-clear 'vector) (-> arg0 root transv) 1.0)))
+          (vector-lerp! cur-dir cur-dir to-target 0.05)
+          (vector-normalize-copy! (-> arg0 root transv) cur-dir 2048.0)
           )
         )
       )
     )
+  (vector+! (-> arg0 root trans) (-> arg0 root trans) (-> arg0 root transv))
+  ;; Spin ~6 degrees/frame around Y axis
+  (quaternion-rotate-y! (-> arg0 root quat) (-> arg0 root quat) 1092.2667)
+  (update-transforms (-> arg0 root))
   0
   (none)
   )
@@ -425,8 +434,7 @@
 (define *doppel-orb-radius*    20480.0)   ;; 5m
 (define *doppel-orb-height*    4915.2)    ;; 1.2m
 (define *doppel-orb-speed*     136.533)   ;; binary-angle units/frame = 8s orbit
-(define *doppel-fire-interval* 300)       ;; 5s at 60fps
-(define *doppel-fire-stagger*  100)       ;; 100 frames between each orb's first shot
+(define *doppel-fire-interval* 300)       ;; 5s at 60fps -- time between each shot in the rotation
 (define *doppel-search-radius* 204800.0)  ;; 50m
 
 ;; ============================================================
@@ -446,9 +454,8 @@
 (define *doppel-orb-angle-0*   0.0)
 (define *doppel-orb-angle-1*   21845.333)
 (define *doppel-orb-angle-2*   43690.667)
-(define *doppel-fire-timer-0*  0)
-(define *doppel-fire-timer-1*  100)
-(define *doppel-fire-timer-2*  200)
+(define *doppel-fire-rotation-timer* 0)   ;; counts down to next shot in the rotation
+(define *doppel-fire-next-orb*       0)   ;; index (0-2) of which orb fires next
 
 (define *djak-blink-modifier*  #f)
 (define *djak-doppel-modifier* #f)
@@ -602,38 +609,26 @@
       (doppel-spawn-orb-particles orb0)
       (doppel-spawn-orb-particles orb1)
       (doppel-spawn-orb-particles orb2)
+      ;; Single rotation: exactly one orb fires every *doppel-fire-interval*
+      ;; frames, cycling through orb 0 -> 1 -> 2 -> 0 -> ...
       (cond
-        ((<= *doppel-fire-timer-0* 0)
-         (let ((tgt (doppel-find-nearest-enemy orb0)))
-           (when (nonzero? tgt)
-             (doppel-fire-orb orb0 tgt)
+        ((<= *doppel-fire-rotation-timer* 0)
+         (let ((orb-pos (case *doppel-fire-next-orb*
+                           ((0) orb0)
+                           ((1) orb1)
+                           (else orb2)
+                           )
+                         ))
+           (let ((tgt (doppel-find-nearest-enemy orb-pos)))
+             (when (nonzero? tgt)
+               (doppel-fire-orb orb-pos tgt)
+               )
              )
            )
-         (set! *doppel-fire-timer-0* *doppel-fire-interval*)
+         (set! *doppel-fire-next-orb* (mod (+ *doppel-fire-next-orb* 1) 3))
+         (set! *doppel-fire-rotation-timer* *doppel-fire-interval*)
          )
-        (else (+! *doppel-fire-timer-0* -1))
-        )
-      (cond
-        ((<= *doppel-fire-timer-1* 0)
-         (let ((tgt (doppel-find-nearest-enemy orb1)))
-           (when (nonzero? tgt)
-             (doppel-fire-orb orb1 tgt)
-             )
-           )
-         (set! *doppel-fire-timer-1* *doppel-fire-interval*)
-         )
-        (else (+! *doppel-fire-timer-1* -1))
-        )
-      (cond
-        ((<= *doppel-fire-timer-2* 0)
-         (let ((tgt (doppel-find-nearest-enemy orb2)))
-           (when (nonzero? tgt)
-             (doppel-fire-orb orb2 tgt)
-             )
-           )
-         (set! *doppel-fire-timer-2* *doppel-fire-interval*)
-         )
-        (else (+! *doppel-fire-timer-2* -1))
+        (else (+! *doppel-fire-rotation-timer* -1))
         )
       )
     )
@@ -655,9 +650,8 @@
      (set! *doppel-orb-angle-0*  0.0)
      (set! *doppel-orb-angle-1*  21845.333)
      (set! *doppel-orb-angle-2*  43690.667)
-     (set! *doppel-fire-timer-0* 0)
-     (set! *doppel-fire-timer-1* *doppel-fire-stagger*)
-     (set! *doppel-fire-timer-2* (* *doppel-fire-stagger* 2))
+     (set! *doppel-fire-rotation-timer* 0)
+     (set! *doppel-fire-next-orb*       0)
      )
     )
   (none)

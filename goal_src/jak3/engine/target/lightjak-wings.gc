@@ -707,7 +707,14 @@
   (let ((v1-6 (as-type (ppointer->process (-> self parent)) process-focusable))
         (a0-6 (-> self node-list data))
         )
-    (set! (-> a0-6 0 param0) (the-as (function cspace transformq none) cspace<-cspace-normalized!))
+    ;; MODIFIED: cspace<-cspace! (no normalization) so the wing inherits
+    ;; Jak's actual scaled bone matrix and scale persists correctly across
+    ;; all wing states (idle/use) without being stomped by ja-post/
+    ;; clone-anim-once. The corruption seen during the transformation ramp
+    ;; is addressed separately by gating when GLJ scale starts applying
+    ;; (see target-lightjak-giant.gc) so the wing's source matrix isn't
+    ;; mid-rapid-change when this binding first kicks in.
+    (set! (-> a0-6 0 param0) (the-as (function cspace transformq none) cspace<-cspace!))
     (set! (-> a0-6 0 param1) (the-as basic (-> v1-6 node-list data 6)))
     (set! (-> a0-6 0 param2) #f)
     )

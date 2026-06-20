@@ -7,6 +7,8 @@
 
 ;; DECOMP BEGINS
 
+(define-extern *gun-walk-mods* surface)
+
 (defpartgroup group-lightjak-get-on-charge
   :id 174
   :duration (seconds 2)
@@ -1101,7 +1103,7 @@
           (pc-clear-trigger-effect! (pc-trigger-effect-option left)))
          
          
-        ;; ADDED: Clear Giant Light Jak state on full light jak exit
+  ;; ADDED: Clear Giant Light Jak state on full light jak exit
         (when (logtest? (-> self lightjak stage) (lightjak-stage ls8))
           (logclear! (-> self lightjak stage) (lightjak-stage ls8))
           (set! (-> self lightjak want-stage) (-> self lightjak stage))
@@ -1119,6 +1121,8 @@
           (set! (-> *jump-mods* target-speed) (meters 20.0))
           (set! (-> *double-jump-mods* transv-max) (meters 8.0))
           (set! (-> *double-jump-mods* target-speed) (meters 8.0))
+          (set! (-> *gun-walk-mods* transv-max) (meters 6.0))
+          (set! (-> *gun-walk-mods* target-speed) (meters 6.0))
           ;; Restore collision sphere
           (set! (-> self control root-prim local-sphere w) (meters 2.9))
           )
@@ -1314,7 +1318,6 @@
     )
   (none)
   )
-
 
 
 
@@ -1560,6 +1563,9 @@
     (set! (-> *jump-mods* target-speed) (meters 30.0))
     (set! (-> *double-jump-mods* transv-max) (meters 30.0))
     (set! (-> *double-jump-mods* target-speed) (meters 30.0))
+    ;; Gun states use *gun-walk-mods* — override so weapon speed matches
+    (set! (-> *gun-walk-mods* transv-max) (meters 30.0))
+    (set! (-> *gun-walk-mods* target-speed) (meters 30.0))
     (let* ((f30-0 (-> self lightjak-interp))
            (f28-0 (lerp-scale 1.0 2.1 f30-0 0.0 1.0))
            (f26-0 (lerp-scale 1.0 1.4 f30-0 0.0 1.0))
@@ -1576,6 +1582,11 @@
     )
   ;; ADDED: Giant Light Jak trigger
   ;; L2 press while light jak + on ground = enter GLJ transformation
+  ;; lightjak-interp >= 1.0 required: triggering GLJ while light jak's own
+  ;; transformation is still ramping produced an unstable wing bone matrix
+  ;; (rapid scale change layered on an already-changing source transform),
+  ;; which corrupted bones.gc's normal-matrix calc into visible clipping
+  ;; rectangles on the wings. Waiting for interp to settle avoids this.
   (when (and (focus-test? self light)
              (nonzero? (-> self lightjak))
              (cpad-pressed? (-> self control cpad number) l2)
@@ -1583,6 +1594,7 @@
              (not (logtest? (-> self lightjak stage) (lightjak-stage ls8)))
              (logtest? (-> self control status) (collide-status on-surface))
              (>= (-> self game eco-pill-light) 1.0)
+             (>= (-> self lightjak-interp) 1.0)
              (not (focus-test? self dead dangerous hit grabbed))
              (not (and (-> self next-state)
                        (let ((v1-0 (-> self next-state name)))
@@ -1605,6 +1617,14 @@
   0
   (none)
   )
+
+
+
+
+
+
+
+
 
 
 
